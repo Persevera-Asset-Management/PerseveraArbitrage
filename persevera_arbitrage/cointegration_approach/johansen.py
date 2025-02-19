@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Optional
 import pandas as pd
 import numpy as np
@@ -35,12 +34,16 @@ class JohansenPortfolio(CointegratedPortfolio):
         
         Args:
             price_data: DataFrame with asset prices as columns
-            
-        Notes:
-            - Stores vectors in descending order of eigenvalues
-            - First vector forms most mean-reverting portfolio
-            - Test statistics only available for ≤12 assets
+                
+        Raises:
+            ValueError: If price data contains NaN/infinite values
         """
+        # Validate input data
+        if price_data.isnull().any().any():
+            raise ValueError("Price data contains NaN values")
+        if np.isinf(price_data).any().any():
+            raise ValueError("Price data contains infinite values")
+        
         # Verify correlations between pairs
         if not self._verify_correlations(price_data):
             print("Warning: Some pairs show low correlation")
@@ -48,7 +51,7 @@ class JohansenPortfolio(CointegratedPortfolio):
         # Set dependent variable if not specified
         dependent_var = self.config.dependent_variable or price_data.columns[0]
         
-        self.price_data = price_data
+        self.price_data = price_data.copy()  # Create copy to prevent modifications
         
         # Run Johansen test
         test_result = coint_johansen(
@@ -72,6 +75,9 @@ class JohansenPortfolio(CointegratedPortfolio):
             
             # Normalize ratios (just divide by first element's ratio)
             scaling = hedge_ratios[dependent_var]
+            if scaling == 0:
+                raise ValueError(f"The hedge ratio for the dependent variable {dependent_var} is zero. Cannot normalize.")
+            
             for ticker in hedge_ratios:
                 hedge_ratios[ticker] = hedge_ratios[ticker] / scaling
             

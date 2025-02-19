@@ -19,41 +19,48 @@ def plot_portfolio(portfolio_values: pd.Series,
         thresholds: Z-score thresholds for trading signals (lower, upper)
         figsize: Figure size tuple (width, height)
     """
-    n_plots = 1 + (zscore is not None) + (signals is not None)
-    fig, axes = plt.subplots(n_plots, 1, figsize=figsize, sharex=True)
-    
-    if n_plots == 1:
-        axes = [axes]
-    
-    # Plot portfolio values
-    axes[0].plot(portfolio_values, label='Portfolio Value', color='blue')
-    axes[0].set_title('Portfolio Values')
-    axes[0].legend()
-    axes[0].grid(True)
-    
-    # Plot z-scores if provided
-    if zscore is not None:
-        idx = 1
-        axes[idx].plot(zscore, label='Z-score', color='orange')
-        axes[idx].axhline(y=thresholds[1], color='r', linestyle='--', alpha=0.5, label='Upper Threshold')
-        axes[idx].axhline(y=thresholds[0], color='r', linestyle='--', alpha=0.5, label='Lower Threshold')
-        axes[idx].axhline(y=0, color='grey', linestyle='-', alpha=0.3)
-        axes[idx].set_title('Z-scores')
-        axes[idx].legend()
-        axes[idx].grid(True)
+    try:
+        n_plots = 1 + (zscore is not None) + (signals is not None)
+        fig, axes = plt.subplots(n_plots, 1, figsize=figsize, sharex=True)
         
-    # Plot signals if provided
-    if signals is not None:
-        idx = 2 if zscore is not None else 1
-        axes[idx].plot(signals, label='Signals', color='green', drawstyle='steps-post')
-        axes[idx].set_title('Trading Signals')
-        axes[idx].set_yticks([-1, 0, 1])
-        axes[idx].set_yticklabels(['Sell', 'Hold', 'Buy'])
-        axes[idx].legend()
-        axes[idx].grid(True)
-    
-    plt.tight_layout()
-    plt.show()
+        if n_plots == 1:
+            axes = [axes]
+        
+        # Plot portfolio values
+        axes[0].plot(portfolio_values, label='Portfolio Value', color='blue')
+        axes[0].set_title('Portfolio Values')
+        axes[0].legend()
+        axes[0].grid(True)
+        
+        # Plot z-scores if provided
+        if zscore is not None:
+            idx = 1
+            axes[idx].plot(zscore, label='Z-score', color='orange')
+            axes[idx].axhline(y=thresholds[1], color='r', linestyle='--', alpha=0.5, 
+                            label='Upper Threshold')
+            axes[idx].axhline(y=thresholds[0], color='r', linestyle='--', alpha=0.5, 
+                            label='Lower Threshold')
+            axes[idx].axhline(y=0, color='grey', linestyle='-', alpha=0.3)
+            axes[idx].set_title('Z-scores')
+            axes[idx].legend()
+            axes[idx].grid(True)
+            
+        # Plot signals if provided
+        if signals is not None:
+            idx = 2 if zscore is not None else 1
+            axes[idx].plot(signals, label='Signals', color='green', drawstyle='steps-post')
+            axes[idx].set_title('Trading Signals')
+            axes[idx].set_yticks([-1, 0, 1])
+            axes[idx].set_yticklabels(['Sell', 'Hold', 'Buy'])
+            axes[idx].legend()
+            axes[idx].grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+        
+    finally:
+        # Clean up to prevent memory leaks
+        plt.close('all')
 
 def plot_pair_analysis(price1: pd.Series,
                        price2: pd.Series,

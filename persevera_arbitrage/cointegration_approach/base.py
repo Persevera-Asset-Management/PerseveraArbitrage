@@ -29,8 +29,7 @@ class CointegratedPortfolio(ABC):
             
         return (cointegration_vector * price_data).sum(axis=1)
     
-    def get_scaled_cointegration_vector(self,
-                                        cointegration_vector: Optional[pd.Series] = None) -> pd.Series:
+    def get_scaled_cointegration_vector(self, cointegration_vector: Optional[pd.Series] = None) -> pd.Series:
         """Get scaled values of cointegration vector in terms of position sizes.
         
         Args:
@@ -38,9 +37,17 @@ class CointegratedPortfolio(ABC):
             
         Returns:
             Scaled cointegration vector showing position sizes
+            
+        Raises:
+            ValueError: If the first element is zero or vector is not available
         """
         if cointegration_vector is None:
+            if self.cointegration_vectors is None:
+                raise ValueError("No cointegration vectors available. Run fit() first.")
             cointegration_vector = self.cointegration_vectors.iloc[0]
             
+        if cointegration_vector.iloc[0] == 0:
+            raise ValueError("The first element of the cointegration vector is zero. Cannot scale.")
+                
         scaling_coefficient = 1 / cointegration_vector.iloc[0]
         return cointegration_vector * scaling_coefficient

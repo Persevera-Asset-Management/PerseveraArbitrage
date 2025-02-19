@@ -22,6 +22,9 @@ def get_half_life(data: pd.Series) -> float:
     reg = LinearRegression(fit_intercept=True)
     reg.fit(lag.values.reshape(-1, 1), delta.values)
     
+    if reg.coef_[0] == 0:
+        return np.inf
+    
     # Calculate half-life
     half_life = -np.log(2) / reg.coef_[0]
     return half_life
@@ -51,17 +54,37 @@ def calculate_zscore(spread: pd.Series, lookback: int = None) -> pd.Series:
         
     Returns:
         Z-score series
+        
+    Notes:
+        Handles initial lookback period by forward-filling NaN values
     """
     if lookback:
-        mean = spread.rolling(window=lookback).mean()
-        std = spread.rolling(window=lookback).std()
+        # Calculate rolling stats
+        mean = spread.rolling(window=lookback, min_periods=1).mean()
+        std = spread.rolling(window=lookback, min_periods=1).std()
+        
+        # Handle edge case where std is zero
+        std = std.replace(0, np.nan)
+        
+        # Calculate z-score
+        zscore = (spread - mean) / std
+        
+        # Forward fill initial NaN values with first valid z-score
+        zscore = zscore.fillna(method='bfill')
+        
     else:
+        # Full series calculation
         mean = spread.mean()
         std = spread.std()
         
-    return (spread - mean) / std
+        if std == 0 or pd.isna(std):
+            return pd.Series(np.nan, index=spread.index)
+            
+        zscore = (spread - mean) / std
+        
+    return zscore
 
-def get_hurst_exponent(data: pd.Series, max_lags: int = 100) -> float:
+def get_hurst_exponent(data: pd.Series, max_lags: int = 100):
     """Calculate Hurst exponent to measure mean reversion strength.
     
     Args:
@@ -71,12 +94,10 @@ def get_hurst_exponent(data: pd.Series, max_lags: int = 100) -> float:
     Returns:
         Hurst exponent (0-0.5 indicates mean reversion)
     """
-    lags = range(2, max_lags)
-    tau = [np.std(np.subtract(data[lag:], data[:-lag]))
-           for lag in lags]
-    
-    reg = np.polyfit(np.log(lags), np.log(tau), 1)
-    return reg[0] * 2.0
+    lags = np.arange(2, max_lags)
+    tau = np.array([np.std(np.subtract(data[lag:], data[:-lag]))
+                    for lag in lags])
+    return np.polyfit(np.log(lags), np.log(tau), 1)[0] * 2.0
 
 def calculate_residuals(data: pd.DataFrame, dependent_var: str, hedge_ratio: pd.Series) -> pd.Series:
     """Calculate residuals from cointegration regression.
