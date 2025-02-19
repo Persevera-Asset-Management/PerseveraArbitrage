@@ -5,7 +5,8 @@ from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
 from .base import CointegratedPortfolio
 from .config import CointegrationConfig
-from .utils import get_half_life, test_stationarity, calculate_zscore, get_hurst_exponent, check_pair_correlation
+from .utils import get_half_life, test_stationarity, calculate_zscore, get_hurst_exponent
+from .validations import validate_price_data, verify_correlations
 
 class JohansenPortfolio(CointegratedPortfolio):
     """Class for portfolio construction using Johansen cointegration test.
@@ -28,7 +29,7 @@ class JohansenPortfolio(CointegratedPortfolio):
         self.half_life = None
         self.residuals = None  
         self.zscore = None
-        
+
     def fit(self, price_data: pd.DataFrame) -> None:
         """Find cointegration vectors using Johansen test.
         
@@ -38,14 +39,10 @@ class JohansenPortfolio(CointegratedPortfolio):
         Raises:
             ValueError: If price data contains NaN/infinite values
         """
-        # Validate input data
-        if price_data.isnull().any().any():
-            raise ValueError("Price data contains NaN values")
-        if np.isinf(price_data).any().any():
-            raise ValueError("Price data contains infinite values")
+        validate_price_data(price_data, self.config.min_history)
         
         # Verify correlations between pairs
-        if not self._verify_correlations(price_data):
+        if not verify_correlations(price_data):
             print("Warning: Some pairs show low correlation")
 
         # Set dependent variable if not specified
@@ -66,28 +63,12 @@ class JohansenPortfolio(CointegratedPortfolio):
             columns=price_data.columns
         )
         
-        # Calculate hedge ratios normalized to dependent variable
-        all_hedge_ratios = pd.DataFrame()
+        # Normalize hedge ratios using vectorized operations
+        scaling = self.cointegration_vectors[dependent_var].values
+        if np.any(scaling == 0):
+            raise ValueError(f"The hedge ratio for the dependent variable {dependent_var} is zero. Cannot normalize.")
 
-        for vector_idx in range(self.cointegration_vectors.shape[0]):
-            # Get current vector
-            hedge_ratios = self.cointegration_vectors.iloc[vector_idx].to_dict()
-            
-            # Normalize ratios (just divide by first element's ratio)
-            scaling = hedge_ratios[dependent_var]
-            if scaling == 0:
-                raise ValueError(f"The hedge ratio for the dependent variable {dependent_var} is zero. Cannot normalize.")
-            
-            for ticker in hedge_ratios:
-                hedge_ratios[ticker] = hedge_ratios[ticker] / scaling
-            
-            # Combine all ratios
-            all_hedge_ratios = pd.concat([
-                all_hedge_ratios,
-                pd.DataFrame(hedge_ratios, index=[0]),
-            ], ignore_index=True)
-                
-        self.hedge_ratios = all_hedge_ratios
+        self.hedge_ratios = self.cointegration_vectors.div(scaling, axis=0)
         
         # Store test statistics if we have ≤12 variables
         if price_data.shape[1] <= 12:
@@ -101,23 +82,6 @@ class JohansenPortfolio(CointegratedPortfolio):
         
         # Validate portfolio characteristics
         self._validate_portfolio(portfolio)
-
-    def _verify_correlations(self, price_data: pd.DataFrame, threshold: float = 0.7) -> bool:
-        """Verify correlations between all pairs."""
-        assets = price_data.columns
-        all_correlated = True
-        
-        for i in range(len(assets)):
-            for j in range(i+1, len(assets)):
-                if not check_pair_correlation(
-                    price_data[assets[i]], 
-                    price_data[assets[j]], 
-                    threshold
-                ):
-                    all_correlated = False
-                    print(f"Warning: Low correlation between {assets[i]} and {assets[j]}")
-        
-        return all_correlated
 
     def _validate_portfolio(self, portfolio: pd.Series) -> None:
         """Validate portfolio characteristics.

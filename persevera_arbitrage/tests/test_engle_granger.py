@@ -8,12 +8,9 @@ from persevera_arbitrage.cointegration_approach.config import CointegrationConfi
 
 def generate_cointegrated_series(periods=500, beta=0.7, noise_std=1.0):
     """Generate cointegrated price series for testing."""
-    # Generate random walk for first series
     np.random.seed(42)  # For reproducibility
     dates = [datetime.now() + timedelta(days=x) for x in range(periods)]
     price1 = np.random.standard_normal(periods).cumsum()
-    
-    # Generate cointegrated second series
     noise = np.random.normal(0, noise_std, periods)
     price2 = beta * price1 + noise
     
@@ -53,6 +50,14 @@ class TestEngleGrangerPortfolio:
             'Asset2': [1, 2, 3]
         })
         with pytest.raises(ValueError, match="NaN values"):
+            portfolio.fit(invalid_data)
+        
+        # Test infinite values
+        invalid_data = pd.DataFrame({
+            'Asset1': [1, np.inf, 3],
+            'Asset2': [1, 2, 3]
+        })
+        with pytest.raises(ValueError, match="infinite values"):
             portfolio.fit(invalid_data)
         
         # Test insufficient history

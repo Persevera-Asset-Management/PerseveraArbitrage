@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .base import CointegratedPortfolio
 from .config import CointegrationConfig
 from .utils import test_stationarity, calculate_zscore, get_half_life
+from .validations import validate_price_data
 
 @dataclass
 class EngleGrangerTestResult:
@@ -65,7 +66,7 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
             ValueError: If price data contains invalid values or insufficient history
         """
         # Validate input data
-        self._validate_input_data(price_data)
+        validate_price_data(price_data, self.config.min_history)
         
         # Store parameters
         self.price_data = price_data.copy()
@@ -80,6 +81,9 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
         
         # Store cointegration vectors
         self._store_cointegration_vectors(hedge_ratios)
+        
+        # Store hedge ratios to instance variable
+        self.hedge_ratios = hedge_ratios
         
         # Perform Engle-Granger test on residuals
         test_result = self._perform_engle_granger_test(residuals)
@@ -102,22 +106,6 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
         self.zscore = calculate_zscore(residuals)
         
         return self.test_results
-
-    def _validate_input_data(self, price_data: pd.DataFrame) -> None:
-        """Validate input price data.
-        
-        Args:
-            price_data: Price data to validate
-            
-        Raises:
-            ValueError: If data invalid
-        """
-        if price_data.isnull().any().any():
-            raise ValueError("Price data contains NaN values")
-        if np.isinf(price_data).any().any():
-            raise ValueError("Price data contains infinite values")
-        if len(price_data) < self.config.min_history:
-            raise ValueError(f"Insufficient price history. Need at least {self.config.min_history} observations")
 
     def _get_ols_hedge_ratios(self,
                               price_data: pd.DataFrame,
@@ -195,13 +183,20 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
             residuals: OLS regression residuals
             
         Returns:
-            ADF test results tuple
+            ADF test results tuple containing:
+            - ADF test statistic
+            - p-value
+            - number of lags used
+            - number of observations
+            - dictionary of critical values
+            - dictionary of IC values if autolag is used
         """
         return adfuller(
             residuals,
-            regression=self.config.det_order,
-            maxlag=self.config.n_lags,
-            autolag=None
+            regression='c',     # Include constant in test regression
+            maxlag=None,        # Let adfuller determine max lags based on sample size
+            autolag='AIC',      # Use Akaike Information Criterion for lag selection
+            regresults=False    # Don't return full regression results
         )
     
     def get_trading_signals(self, zscore_threshold: float = 2.0) -> pd.Series:

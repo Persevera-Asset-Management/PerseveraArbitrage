@@ -1,4 +1,3 @@
-# persevera_arbitrage/cointegration/utils.py
 import numpy as np
 import pandas as pd
 from typing import Tuple
@@ -110,13 +109,8 @@ def calculate_residuals(data: pd.DataFrame, dependent_var: str, hedge_ratio: pd.
     Returns:
         Residual series
     """
-    independent_vars = [col for col in data.columns if col != dependent_var]
-    residuals = data[dependent_var].copy()
-    
-    for var in independent_vars:
-        residuals -= hedge_ratio[var] * data[var]
-        
-    return residuals
+    independent_vars = data.columns[data.columns != dependent_var]
+    return data[dependent_var] - (hedge_ratio[independent_vars] * data[independent_vars]).sum(axis=1)
 
 def check_pair_correlation(price1: pd.Series, price2: pd.Series, threshold: float = 0.7) -> bool:
     """Check if pair has sufficient correlation.
