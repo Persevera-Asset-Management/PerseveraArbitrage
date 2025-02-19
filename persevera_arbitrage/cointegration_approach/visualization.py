@@ -6,10 +6,10 @@ import numpy as np
 from typing import Optional, Tuple
 
 def plot_portfolio(portfolio_values: pd.Series,
-                 zscore: Optional[pd.Series] = None,
-                 signals: Optional[pd.Series] = None,
-                 thresholds: Tuple[float, float] = (-2.0, 2.0),
-                 figsize: tuple = (15, 8)) -> None:
+                   zscore: Optional[pd.Series] = None,
+                   signals: Optional[pd.Series] = None,
+                   thresholds: Tuple[float, float] = (-2.0, 2.0),
+                   figsize: tuple = (15, 8)) -> None:
     """Plot portfolio values, z-scores, and signals.
     
     Args:
@@ -55,10 +55,10 @@ def plot_portfolio(portfolio_values: pd.Series,
     plt.tight_layout()
     plt.show()
 
-def plot_pair_analysis(price1: pd.Series, 
-                     price2: pd.Series,
-                     title: Optional[str] = None,
-                     figsize: tuple = (15, 10)) -> None:
+def plot_pair_analysis(price1: pd.Series,
+                       price2: pd.Series,
+                       title: Optional[str] = None,
+                       figsize: tuple = (15, 10)) -> None:
     """Plot pair analysis including prices and scatter.
     
     Args:
@@ -92,9 +92,7 @@ def plot_pair_analysis(price1: pd.Series,
     plt.tight_layout()
     plt.show()
 
-def plot_cointegration_test(test_stats: pd.DataFrame,
-                         title: str,
-                         figsize: tuple = (10, 6)) -> None:
+def plot_cointegration_test(test_stats: pd.DataFrame, title: str, figsize: tuple = (10, 6)) -> None:
     """Plot cointegration test statistics.
     
     Args:
@@ -124,8 +122,7 @@ def plot_cointegration_test(test_stats: pd.DataFrame,
     plt.tight_layout()
     plt.show()
 
-def plot_hedge_ratios(hedge_ratios: pd.DataFrame,
-                    figsize: tuple = (12, 6)) -> None:
+def plot_hedge_ratios(hedge_ratios: pd.DataFrame, figsize: tuple = (12, 6)) -> None:
     """Plot hedge ratios for each asset.
     
     Args:

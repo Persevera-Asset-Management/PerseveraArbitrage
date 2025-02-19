@@ -26,8 +26,7 @@ def get_half_life(data: pd.Series) -> float:
     half_life = -np.log(2) / reg.coef_[0]
     return half_life
 
-def test_stationarity(data: pd.Series, 
-                     significance: float = 0.05) -> Tuple[bool, float]:
+def test_stationarity(data: pd.Series, significance: float = 0.05) -> Tuple[bool, float]:
     """Test time series for stationarity using ADF test.
     
     Args:
@@ -43,8 +42,7 @@ def test_stationarity(data: pd.Series,
     pvalue = adf_result[1]
     return pvalue < significance, pvalue
 
-def calculate_zscore(spread: pd.Series,
-                    lookback: int = None) -> pd.Series:
+def calculate_zscore(spread: pd.Series, lookback: int = None) -> pd.Series:
     """Calculate z-score of a spread series.
     
     Args:
@@ -63,8 +61,7 @@ def calculate_zscore(spread: pd.Series,
         
     return (spread - mean) / std
 
-def get_hurst_exponent(data: pd.Series, 
-                      max_lags: int = 100) -> float:
+def get_hurst_exponent(data: pd.Series, max_lags: int = 100) -> float:
     """Calculate Hurst exponent to measure mean reversion strength.
     
     Args:
@@ -81,9 +78,7 @@ def get_hurst_exponent(data: pd.Series,
     reg = np.polyfit(np.log(lags), np.log(tau), 1)
     return reg[0] * 2.0
 
-def calculate_residuals(data: pd.DataFrame,
-                       dependent_var: str,
-                       hedge_ratio: pd.Series) -> pd.Series:
+def calculate_residuals(data: pd.DataFrame, dependent_var: str, hedge_ratio: pd.Series) -> pd.Series:
     """Calculate residuals from cointegration regression.
     
     Args:
@@ -102,9 +97,7 @@ def calculate_residuals(data: pd.DataFrame,
         
     return residuals
 
-def check_pair_correlation(price1: pd.Series,
-                         price2: pd.Series,
-                         threshold: float = 0.7) -> bool:
+def check_pair_correlation(price1: pd.Series, price2: pd.Series, threshold: float = 0.7) -> bool:
     """Check if pair has sufficient correlation.
     
     Args:

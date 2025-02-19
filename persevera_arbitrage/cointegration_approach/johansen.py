@@ -65,24 +65,22 @@ class JohansenPortfolio(CointegratedPortfolio):
         
         # Calculate hedge ratios normalized to dependent variable
         all_hedge_ratios = pd.DataFrame()
-        
+
         for vector_idx in range(self.cointegration_vectors.shape[0]):
             # Get current vector
             hedge_ratios = self.cointegration_vectors.iloc[vector_idx].to_dict()
             
-            # Normalize ratios
-            for ticker, ratio in hedge_ratios.items():
-                if ticker != dependent_var:
-                    hedge_ratios[ticker] = [-ratio / hedge_ratios[dependent_var]]
-            
-            hedge_ratios[dependent_var] = [1.0]
+            # Normalize ratios (just divide by first element's ratio)
+            scaling = hedge_ratios[dependent_var]
+            for ticker in hedge_ratios:
+                hedge_ratios[ticker] = hedge_ratios[ticker] / scaling
             
             # Combine all ratios
             all_hedge_ratios = pd.concat([
                 all_hedge_ratios,
                 pd.DataFrame(hedge_ratios)
             ])
-        
+                
         self.hedge_ratios = all_hedge_ratios
         
         # Store test statistics if we have ≤12 variables
@@ -183,9 +181,7 @@ class JohansenPortfolio(CointegratedPortfolio):
         
         return eigen_test and trace_test
     
-    def get_position_sizes(self, 
-                            position_size: Optional[float] = None,
-                            vector_index: int = 0) -> pd.Series:
+    def get_position_sizes(self, position_size: Optional[float] = None, vector_index: int = 0) -> pd.Series:
         """Get position sizes for trading.
         
         Args:

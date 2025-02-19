@@ -11,9 +11,9 @@ class CointegratedPortfolio(ABC):
         self.cointegration_vectors = None  # Vectors used for mean-reverting portfolios
         self.hedge_ratios = None  # Hedge ratios for trading
         
-    def construct_mean_reverting_portfolio(self, 
-                                         price_data: pd.DataFrame,
-                                         cointegration_vector: Optional[pd.Series] = None) -> pd.Series:
+    def construct_mean_reverting_portfolio(self,
+                                           price_data: pd.DataFrame,
+                                           cointegration_vector: Optional[pd.Series] = None) -> pd.Series:
         """Construct mean-reverting portfolio from price data and cointegration vector.
         
         Args:
@@ -29,8 +29,8 @@ class CointegratedPortfolio(ABC):
             
         return (cointegration_vector * price_data).sum(axis=1)
     
-    def get_scaled_cointegration_vector(self, 
-                                      cointegration_vector: Optional[pd.Series] = None) -> pd.Series:
+    def get_scaled_cointegration_vector(self,
+                                        cointegration_vector: Optional[pd.Series] = None) -> pd.Series:
         """Get scaled values of cointegration vector in terms of position sizes.
         
         Args:
