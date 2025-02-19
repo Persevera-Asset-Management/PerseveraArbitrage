@@ -84,8 +84,8 @@ class JohansenPortfolio(CointegratedPortfolio):
             # Combine all ratios
             all_hedge_ratios = pd.concat([
                 all_hedge_ratios,
-                pd.DataFrame(hedge_ratios)
-            ])
+                pd.DataFrame(hedge_ratios, index=[0]),
+            ], ignore_index=True)
                 
         self.hedge_ratios = all_hedge_ratios
         
