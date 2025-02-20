@@ -50,7 +50,7 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
     def fit(self, 
             price_data: pd.DataFrame, 
             dependent_variable: Optional[str] = None,
-            add_constant: bool = False) -> EngleGrangerTestResult:
+            add_constant: bool = True) -> EngleGrangerTestResult:
         """Fit the Engle-Granger cointegration model.
         
         Args:
@@ -110,7 +110,7 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
     def _get_ols_hedge_ratios(self,
                               price_data: pd.DataFrame,
                               dependent_variable: str,
-                              add_constant: bool = False) -> Tuple[dict, pd.DataFrame, pd.Series, pd.Series]:
+                              add_constant: bool = True) -> Tuple[dict, pd.DataFrame, pd.Series, pd.Series]:
         """Get OLS hedge ratios using linear regression.
         
         Args:
@@ -142,12 +142,11 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
         # Calculate residuals
         residuals = y - model.predict(X)
         
-        # Create hedge ratios dictionary
-        hedge_ratios = model.coef_
-        hedge_ratios_dict = {
-            dependent_variable: 1.0,
-            **dict(zip(exogenous_variables, hedge_ratios))
-        }
+        # Create hedge ratios dictionary including intercept if used
+        hedge_ratios_dict = {dependent_variable: 1.0}
+        if add_constant and model.intercept_ != 0:
+            hedge_ratios_dict['constant'] = model.intercept_
+        hedge_ratios_dict.update(dict(zip(exogenous_variables, model.coef_)))
         
         return hedge_ratios_dict, X, y, residuals
 
