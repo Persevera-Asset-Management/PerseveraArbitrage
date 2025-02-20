@@ -50,7 +50,7 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
     def fit(self, 
             price_data: pd.DataFrame, 
             dependent_variable: Optional[str] = None,
-            add_constant: bool = True) -> EngleGrangerTestResult:
+            add_constant: bool = False) -> EngleGrangerTestResult:
         """Fit the Engle-Granger cointegration model.
         
         Args:
@@ -110,7 +110,7 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
     def _get_ols_hedge_ratios(self,
                               price_data: pd.DataFrame,
                               dependent_variable: str,
-                              add_constant: bool = True) -> Tuple[dict, pd.DataFrame, pd.Series, pd.Series]:
+                              add_constant: bool = False) -> Tuple[Dict[str, float], pd.DataFrame, pd.Series, pd.Series]:
         """Get OLS hedge ratios using linear regression.
         
         Args:
@@ -120,7 +120,7 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
             
         Returns:
             Tuple containing:
-            - Dictionary of hedge ratios
+            - Dictionary mapping asset names to hedge ratios
             - X matrix used in regression
             - y vector used in regression
             - Residuals from regression
@@ -213,8 +213,11 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
         Raises:
             ValueError: If model not yet fit
         """
-        if self.zscore is None:
+        if self.zscore is None or self.test_results is None:
             raise ValueError("Must fit model before generating signals")
+            
+        if not self.test_results.is_cointegrated:
+            raise ValueError("Assets are not cointegrated at the specified significance level")
             
         signals = pd.Series(0, index=self.zscore.index)
         signals[self.zscore > zscore_threshold] = -1  # Short signal

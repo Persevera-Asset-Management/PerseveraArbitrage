@@ -4,6 +4,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "persevera_arbitrage"
-version = "0.2.4"
+version = "0.2.5"
 description = "Statistical arbitrage tools for Persevera Asset Management"
 authors = [{ name = "Persevera Asset Management" }]
