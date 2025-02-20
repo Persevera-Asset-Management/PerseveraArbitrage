@@ -170,8 +170,8 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
             columns=self.price_data.columns
         )
         
-        # Store hedge ratios [1, β1, β2, ...]
-        self.hedge_ratios = pd.DataFrame(
+        # Store hedge ratios [1, β1, β2, ...] in a different variable
+        self.hedge_ratios_df = pd.DataFrame(
             [np.append(1, np.array(other_ratios))],
             columns=self.price_data.columns
         )
