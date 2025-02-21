@@ -45,8 +45,8 @@ class CointegrationSimulation:
         if not 0 <= phi < 1:
             raise ValueError("phi must be between 0 and 1 for stationarity")
             
-        if price_data.empty or 'P1' not in price_data.columns:
-            raise ValueError("price_data must be a non-empty DataFrame with a 'P1' column.")
+        if price_data.empty:
+            raise ValueError("price_data must be a non-empty DataFrame.")
             
         self.n_periods = n_periods
         self.beta = beta
@@ -106,8 +106,8 @@ class CointegrationSimulation:
         )
         
         prices = pd.DataFrame({
-            'P1': p1,
-            'P2': p2
+            price_data.columns[0]: p1,
+            price_data.columns[1]: p2
         }, index=dates)
         
         return prices, pd.Series(errors, index=dates)
