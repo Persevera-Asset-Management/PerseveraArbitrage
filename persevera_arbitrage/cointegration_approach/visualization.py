@@ -3,13 +3,31 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
+
+def set_plot_style(style: str = 'default') -> None:
+    """Set the plotting style for all visualizations.
+    
+    Args:
+        style: One of ['default', 'dark', 'light', 'paper']
+    """
+    if style == 'dark':
+        plt.style.use('dark_background')
+    elif style == 'paper':
+        plt.style.use(['seaborn-whitegrid', 'seaborn-paper'])
+    elif style == 'light':
+        plt.style.use('seaborn')
+    else:
+        plt.style.use('default')
 
 def plot_portfolio(portfolio_values: pd.Series,
                    zscore: Optional[pd.Series] = None,
                    signals: Optional[pd.Series] = None,
                    thresholds: Tuple[float, float] = (-2.0, 2.0),
-                   figsize: tuple = (15, 8)) -> None:
+                   figsize: tuple = (15, 8),
+                   show: bool = True) -> Optional[Tuple[Figure, Axes]]:
     """Plot portfolio values, z-scores, and signals.
     
     Args:
@@ -18,6 +36,10 @@ def plot_portfolio(portfolio_values: pd.Series,
         signals: Optional trading signals
         thresholds: Z-score thresholds for trading signals (lower, upper)
         figsize: Figure size tuple (width, height)
+        show: If True, calls plt.show(). If False, returns (fig, axes)
+    
+    Returns:
+        If show=False, returns tuple of (figure, axes)
     """
     try:
         n_plots = 1 + (zscore is not None) + (signals is not None)
@@ -56,16 +78,22 @@ def plot_portfolio(portfolio_values: pd.Series,
             axes[idx].grid(True)
         
         plt.tight_layout()
-        plt.show()
+        
+        if show:
+            plt.show()
+            return None
+        return fig, axes
         
     finally:
-        # Clean up to prevent memory leaks
-        plt.close('all')
+        if show:
+            plt.close('all')
 
 def plot_pair_analysis(price1: pd.Series,
                        price2: pd.Series,
                        title: Optional[str] = None,
-                       figsize: tuple = (15, 10)) -> None:
+                       figsize: tuple = (15, 10),
+                       start_date: Optional[str] = None,
+                       end_date: Optional[str] = None) -> None:
     """Plot pair analysis including prices and scatter.
     
     Args:
@@ -73,7 +101,16 @@ def plot_pair_analysis(price1: pd.Series,
         price2: Second asset prices
         title: Optional title
         figsize: Figure size tuple
+        start_date: Optional start date for analysis
+        end_date: Optional end date for analysis
     """
+    if start_date:
+        price1 = price1[start_date:]
+        price2 = price2[start_date:]
+    if end_date:
+        price1 = price1[:end_date]
+        price2 = price2[:end_date]
+    
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=figsize)
     
     # Plot normalized prices
@@ -129,22 +166,29 @@ def plot_cointegration_test(test_stats: pd.DataFrame, title: str, figsize: tuple
     plt.tight_layout()
     plt.show()
 
-def plot_hedge_ratios(hedge_ratios: pd.DataFrame, figsize: tuple = (12, 6)) -> None:
+def plot_hedge_ratios(hedge_ratios: pd.DataFrame,
+                      figsize: tuple = (12, 6),
+                      colors: Optional[list] = None,
+                      rotation: int = 45,
+                      title: str = 'Portfolio Hedge Ratios') -> None:
     """Plot hedge ratios for each asset.
     
     Args:
         hedge_ratios: DataFrame with hedge ratios
         figsize: Figure size tuple
+        colors: Optional list of colors for bars
+        rotation: Rotation angle for x-axis labels
+        title: Plot title
     """
     plt.figure(figsize=figsize)
     
-    # Create bar plot
-    sns.barplot(data=hedge_ratios.T)
+    # Create bar plot with optional colors
+    sns.barplot(data=hedge_ratios.T, palette=colors)
     
-    plt.title('Portfolio Hedge Ratios')
+    plt.title(title)
     plt.xlabel('Asset')
     plt.ylabel('Ratio')
-    plt.xticks(rotation=45)
+    plt.xticks(rotation=rotation)
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
