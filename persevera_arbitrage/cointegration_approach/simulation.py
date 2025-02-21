@@ -1,6 +1,7 @@
 from typing import Tuple, Optional
 import numpy as np
 import pandas as pd
+from .engle_granger import EngleGrangerPortfolio  # Import the EngleGrangerPortfolio
 
 class CointegrationSimulation:
     """
@@ -22,7 +23,7 @@ class CointegrationSimulation:
     """
     
     def __init__(self,
-                 price_data: pd.DataFrame,
+                 portfolio: EngleGrangerPortfolio,  # Accept EngleGrangerPortfolio instance
                  n_periods: int = 1000,
                  beta: float = 1.0,
                  phi: float = 0.7,
@@ -34,27 +35,26 @@ class CointegrationSimulation:
         Initialize simulation parameters.
         
         Args:
-            n_periods: Number of periods to simulate
-            beta: Cointegration coefficient
-            phi: AR(1) coefficient for error process (0 < phi < 1)
-            drift: Drift term for price process
-            price_vol: Volatility of random shocks to P1
-            error_vol: Volatility of shocks to error process
-            random_seed: Random seed for reproducibility
+            portfolio: An instance of EngleGrangerPortfolio containing price data and hedge ratios.
+            n_periods: Number of periods to simulate.
+            beta: Cointegration coefficient.
+            phi: AR(1) coefficient for error process.
+            drift: Drift term for price process.
+            price_vol: Volatility of random shocks to P1.
+            error_vol: Volatility of shocks to error process.
+            random_seed: Random seed for reproducibility.
         """
-        if not 0 <= phi < 1:
-            raise ValueError("phi must be between 0 and 1 for stationarity")
-            
-        if price_data.empty:
-            raise ValueError("price_data must be a non-empty DataFrame.")
-            
+        self.portfolio = portfolio  # Store the portfolio instance
         self.n_periods = n_periods
         self.beta = beta
         self.phi = phi
         self.drift = drift
         self.price_vol = price_vol
         self.error_vol = error_vol
-        self.price_data = price_data  # Store price_data as an instance variable
+        
+        # Extract necessary parameters from the portfolio
+        self.price_data = portfolio.price_data
+        self.hedge_ratios = portfolio.hedge_ratios
         
         if random_seed is not None:
             np.random.seed(random_seed)
@@ -77,11 +77,11 @@ class CointegrationSimulation:
         
         # Generate first price series (random walk with drift)
         p1 = np.zeros(self.n_periods)
-        p1[0] = self.price_data.iloc[-1].iloc[0]  # Use self.price_data
+        p1[0] = self.price_data.iloc[-1].iloc[0]  # Use last price from price_data
         
         for t in range(1, self.n_periods):
             p1[t] = p1[t-1] + price_shocks[t]
-            
+        
         # Generate random shocks for error process (eps2)
         error_shocks = np.random.normal(
             loc=0,
@@ -95,13 +95,13 @@ class CointegrationSimulation:
         
         for t in range(1, self.n_periods):
             errors[t] = self.phi * errors[t-1] + error_shocks[t]
-            
+        
         # Generate second price series using cointegration equation
-        p2 = self.beta * p1 + errors
+        p2 = (p1 - errors) / self.hedge_ratios[self.price_data.columns[1]]  # Use hedge ratio from portfolio
         
         # Create DataFrame with prices
         dates = pd.bdate_range(
-            start=self.price_data.iloc[-1].name,  # Use self.price_data
+            start=self.price_data.iloc[-1].name,
             periods=self.n_periods,
             freq='D'
         )
@@ -111,7 +111,7 @@ class CointegrationSimulation:
             self.price_data.columns[1]: p2
         }, index=dates)
         
-        return prices, pd.Series(errors, index=dates)
+        return prices, pd.Series(errors, index=dates)  # Return actual errors
     
     def get_true_parameters(self) -> dict:
         """Get true parameters used in simulation."""
