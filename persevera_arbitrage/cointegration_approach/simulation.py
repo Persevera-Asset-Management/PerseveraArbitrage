@@ -54,6 +54,7 @@ class CointegrationSimulation:
         self.drift = drift
         self.price_vol = price_vol
         self.error_vol = error_vol
+        self.price_data = price_data  # Store price_data as an instance variable
         
         if random_seed is not None:
             np.random.seed(random_seed)
@@ -76,7 +77,7 @@ class CointegrationSimulation:
         
         # Generate first price series (random walk with drift)
         p1 = np.zeros(self.n_periods)
-        p1[0] = price_data.iloc[-1].iloc[0] # last price of the price_data
+        p1[0] = self.price_data.iloc[-1].iloc[0]  # Use self.price_data
         
         for t in range(1, self.n_periods):
             p1[t] = p1[t-1] + price_shocks[t]
@@ -100,14 +101,14 @@ class CointegrationSimulation:
         
         # Create DataFrame with prices
         dates = pd.bdate_range(
-            start=price_data.iloc[-1].name,
+            start=self.price_data.iloc[-1].name,  # Use self.price_data
             periods=self.n_periods,
             freq='D'
         )
         
         prices = pd.DataFrame({
-            price_data.columns[0]: p1,
-            price_data.columns[1]: p2
+            self.price_data.columns[0]: p1,
+            self.price_data.columns[1]: p2
         }, index=dates)
         
         return prices, pd.Series(errors, index=dates)
