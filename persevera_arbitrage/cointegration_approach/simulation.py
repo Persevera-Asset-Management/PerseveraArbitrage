@@ -22,14 +22,13 @@ class CointegrationSimulation:
     """
     
     def __init__(self,
+                 price_data: pd.DataFrame,
                  n_periods: int = 1000,
                  beta: float = 1.0,
                  phi: float = 0.7,
                  drift: float = 0.0001,
                  price_vol: float = 0.01,
                  error_vol: float = 0.1,
-                 initial_price: float = 100.0,
-                 initial_date: str = '2020-01-01',
                  random_seed: Optional[int] = None):
         """
         Initialize simulation parameters.
@@ -41,12 +40,13 @@ class CointegrationSimulation:
             drift: Drift term for price process
             price_vol: Volatility of random shocks to P1
             error_vol: Volatility of shocks to error process
-            initial_price: Starting price for first series
-            initial_date: Starting date for simulation
             random_seed: Random seed for reproducibility
         """
         if not 0 <= phi < 1:
             raise ValueError("phi must be between 0 and 1 for stationarity")
+            
+        if price_data.empty or 'P1' not in price_data.columns:
+            raise ValueError("price_data must be a non-empty DataFrame with a 'P1' column.")
             
         self.n_periods = n_periods
         self.beta = beta
@@ -54,8 +54,6 @@ class CointegrationSimulation:
         self.drift = drift
         self.price_vol = price_vol
         self.error_vol = error_vol
-        self.initial_price = initial_price
-        self.initial_date = initial_date
         
         if random_seed is not None:
             np.random.seed(random_seed)
@@ -78,7 +76,7 @@ class CointegrationSimulation:
         
         # Generate first price series (random walk with drift)
         p1 = np.zeros(self.n_periods)
-        p1[0] = self.initial_price
+        p1[0] = price_data.iloc[-1].iloc[0] # last price of the price_data
         
         for t in range(1, self.n_periods):
             p1[t] = p1[t-1] + price_shocks[t]
@@ -102,7 +100,7 @@ class CointegrationSimulation:
         
         # Create DataFrame with prices
         dates = pd.bdate_range(
-            start=self.initial_date,
+            start=price_data.iloc[-1].name,
             periods=self.n_periods,
             freq='D'
         )
