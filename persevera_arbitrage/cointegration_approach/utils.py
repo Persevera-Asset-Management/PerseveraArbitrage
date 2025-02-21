@@ -40,7 +40,7 @@ def test_stationarity(data: pd.Series,
     Args:
         data: Time series to test
         significance: Significance level for test
-        regression: Type of regression to use in test ('c', 'nc', 'ct', 'ctt')
+        regression: Type of regression to use in test ('c', 'n', 'ct', 'ctt')
         
     Returns:
         Tuple containing:
