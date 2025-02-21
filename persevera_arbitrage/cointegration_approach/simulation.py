@@ -76,11 +76,11 @@ class CointegrationSimulation:
         )
         
         # Generate first price series (random walk with drift)
-        p1 = np.zeros(self.n_periods)
-        p1[0] = self.price_data.iloc[-1].iloc[0]  # Use last price from price_data
+        p2 = np.zeros(self.n_periods)
+        p2[0] = self.price_data.iloc[-1].iloc[1]  # Use last price from price_data
         
         for t in range(1, self.n_periods):
-            p1[t] = p1[t-1] + price_shocks[t]
+            p2[t] = p2[t-1] + price_shocks[t]
         
         # Generate random shocks for error process (eps2)
         error_shocks = np.random.normal(
@@ -97,7 +97,7 @@ class CointegrationSimulation:
             errors[t] = self.phi * errors[t-1] + error_shocks[t]
         
         # Generate second price series using cointegration equation
-        p2 = (p1 - errors) / self.hedge_ratios[self.price_data.columns[1]]  # Use hedge ratio from portfolio
+        p1 = p2 * self.hedge_ratios[self.price_data.columns[1]] + errors
         
         # Create DataFrame with prices
         dates = pd.bdate_range(
