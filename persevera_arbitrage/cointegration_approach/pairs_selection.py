@@ -97,14 +97,14 @@ class CointegrationPairSelector:
         
         # Test cointegration using Johansen
         self.johansen.fit(pair_data)
-        is_cointegrated_johansen = self.johansen.is_cointegrated('95%')
+        is_cointegrated_johansen = self.johansen.is_cointegrated(significance='95%')
         
         # Test cointegration using Engle-Granger (both directions)
         self.engle_granger.fit(pair_data, dependent_variable=asset1)
-        is_cointegrated_eg_1 = self.engle_granger.is_cointegrated()
+        is_cointegrated_eg_1 = self.engle_granger.is_cointegrated(significance=0.05)
         
         self.engle_granger.fit(pair_data, dependent_variable=asset2)
-        is_cointegrated_eg_2 = self.engle_granger.is_cointegrated()
+        is_cointegrated_eg_2 = self.engle_granger.is_cointegrated(significance=0.05)
         
         is_cointegrated_engle_granger = is_cointegrated_eg_1 and is_cointegrated_eg_2
         
