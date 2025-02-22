@@ -2,11 +2,23 @@ from typing import Optional
 import pandas as pd
 import numpy as np
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
+from dataclasses import dataclass
 
 from .base import CointegratedPortfolio
 from .config import CointegrationConfig
 from .utils import get_half_life, test_stationarity, calculate_zscore, get_hurst_exponent
 from .validations import validate_price_data, verify_correlations
+
+@dataclass
+class JohansenTestResult:
+    """Container for Johansen test results."""
+    cointegration_vectors: pd.DataFrame
+    hedge_ratios: pd.DataFrame
+    eigen_statistic: Optional[pd.DataFrame]  # None if >12 assets
+    trace_statistic: Optional[pd.DataFrame]  # None if >12 assets
+    residuals: pd.Series
+    is_cointegrated: bool
+    half_life: Optional[float] = None
 
 class JohansenPortfolio(CointegratedPortfolio):
     """Class for portfolio construction using Johansen cointegration test.
@@ -28,14 +40,16 @@ class JohansenPortfolio(CointegratedPortfolio):
         self.johansen_eigen_statistic = None
         self.half_life = None
         self.residuals = None  
-        self.zscore = None
 
-    def fit(self, price_data: pd.DataFrame) -> None:
+    def fit(self, price_data: pd.DataFrame) -> JohansenTestResult:
         """Find cointegration vectors using Johansen test.
         
         Args:
             price_data: DataFrame with asset prices as columns
                 
+        Returns:
+            JohansenTestResult containing test statistics and results
+            
         Raises:
             ValueError: If price data contains NaN/infinite values
         """
@@ -71,17 +85,31 @@ class JohansenPortfolio(CointegratedPortfolio):
         self.hedge_ratios = self.cointegration_vectors.div(scaling, axis=0)
         
         # Store test statistics if we have ≤12 variables
+        eigen_stat = None
+        trace_stat = None
         if price_data.shape[1] <= 12:
             self._store_test_statistics(test_result, price_data.columns)
+            eigen_stat = self.johansen_eigen_statistic
+            trace_stat = self.johansen_trace_statistic
             
         # Calculate portfolio and analyze properties
         portfolio = self.construct_mean_reverting_portfolio(price_data)
         
         self.half_life = get_half_life(portfolio)
-        self.zscore = calculate_zscore(portfolio)
         
         # Validate portfolio characteristics
-        self._validate_portfolio(portfolio)
+        # self._validate_portfolio(portfolio)
+
+        # Create and return test results
+        return JohansenTestResult(
+            cointegration_vectors=self.cointegration_vectors,
+            hedge_ratios=self.hedge_ratios,
+            eigen_statistic=eigen_stat,
+            trace_statistic=trace_stat,
+            residuals=portfolio,
+            is_cointegrated=self.is_cointegrated() if eigen_stat is not None else True,
+            half_life=self.half_life
+        )
 
     def _validate_portfolio(self, portfolio: pd.Series) -> None:
         """Validate portfolio characteristics.
@@ -151,39 +179,3 @@ class JohansenPortfolio(CointegratedPortfolio):
         
         return eigen_test and trace_test
     
-    def get_position_sizes(self, position_size: Optional[float] = None, vector_index: int = 0) -> pd.Series:
-        """Get position sizes for trading.
-        
-        Args:
-            position_size: Base position size. If None, uses config value
-            vector_index: Which cointegration vector to use (default=0)
-            
-        Returns:
-            Series with position sizes for each asset
-        """
-        position_size = position_size or self.config.position_size
-        vector = self.cointegration_vectors.iloc[vector_index]
-        return vector * position_size
-        
-    def get_trading_signals(self, zscore_threshold: float = 2.0) -> pd.Series:
-        """Generate trading signals based on z-score.
-        
-        Args:
-            zscore_threshold: Z-score threshold for generating signals
-            
-        Returns:
-            Series with trading signals:
-                1: Long signal (z-score < -threshold)
-                -1: Short signal (z-score > threshold)
-                0: No signal
-                
-        Raises:
-            ValueError: If portfolio has not been fit
-        """
-        if self.zscore is None:
-            raise ValueError("Must fit portfolio before generating signals")
-            
-        signals = pd.Series(0, index=self.zscore.index)
-        signals[self.zscore > zscore_threshold] = -1  # Sell signal
-        signals[self.zscore < -zscore_threshold] = 1  # Buy signal
-        return signals

@@ -50,8 +50,7 @@ def test_stationarity(data: pd.Series,
     """
     adf_result = adfuller(data, regression=regression)
     pvalue = adf_result[1]
-    critical_values = adf_result[4]
-    return pvalue < significance, pvalue, critical_values
+    return pvalue < significance, pvalue
 
 def calculate_zscore(spread: pd.Series,
                      lookback: Optional[int] = None,
