@@ -104,20 +104,17 @@ class CointegrationPairSelector:
         is_cointegrated_engle_granger = is_cointegrated_eg_1 and is_cointegrated_eg_2
         
         # Due to Engle-Granger's test sensitivity to the ordering of variables, we select the
-        # combination that generated the lowest t-statistic
-        if eg_results_1.adf_statistic < eg_results_2.adf_statistic:
+        # combination that generated the lowest p-value
+        if eg_results_1.p_value < eg_results_2.p_value:
             eg_results = eg_results_1
         else:
             eg_results = eg_results_2
 
-        # After performing both tests, we use the residuals from the Engle-Granger test
-        # as the spread
+        # After performing both tests, we use the residuals from the Engle-Granger test as the spread
         spread = eg_results.residuals
         half_life = eg_results.half_life
         hurst_exponent = get_hurst_exponent(spread)
-        
-        # Get hedge ratio from Johansen test
-        hedge_ratio = abs(self.johansen.hedge_ratios.iloc[0, 1])
+        hedge_ratio = list(eg_results.hedge_ratios.values())[1]
         
         # Check if pair passes all criteria
         passed_all_criteria = (
