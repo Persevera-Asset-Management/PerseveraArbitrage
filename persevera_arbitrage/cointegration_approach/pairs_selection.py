@@ -105,7 +105,7 @@ class CointegrationPairSelector:
         
         # Due to Engle-Granger's test sensitivity to the ordering of variables, we select the
         # combination that generated the lowest t-statistic
-        if eg_results_1.test_results.adf_statistic < eg_results_2.test_results.adf_statistic:
+        if eg_results_1.adf_statistic < eg_results_2.adf_statistic:
             eg_results = eg_results_1
         else:
             eg_results = eg_results_2
