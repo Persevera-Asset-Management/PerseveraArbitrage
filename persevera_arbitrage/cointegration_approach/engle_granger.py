@@ -197,50 +197,6 @@ class EngleGrangerPortfolio(CointegratedPortfolio):
             autolag='AIC',      # Use Akaike Information Criterion for lag selection
             regresults=False    # Don't return full regression results
         )
-    
-    def get_trading_signals(self, zscore_threshold: float = 2.0) -> pd.Series:
-        """Generate trading signals based on zscore of residuals.
-        
-        Args:
-            zscore_threshold: Threshold for generating signals
-            
-        Returns:
-            Series with trading signals:
-                1: Long signal (z-score < -threshold)
-                -1: Short signal (z-score > threshold)
-                0: No signal
-                
-        Raises:
-            ValueError: If model not yet fit
-        """
-        if self.zscore is None or self.test_results is None:
-            raise ValueError("Must fit model before generating signals")
-            
-        if not self.test_results.is_cointegrated:
-            raise ValueError("Assets are not cointegrated at the specified significance level")
-            
-        signals = pd.Series(0, index=self.zscore.index)
-        signals[self.zscore > zscore_threshold] = -1  # Short signal
-        signals[self.zscore < -zscore_threshold] = 1  # Long signal
-        return signals
-        
-    def get_position_sizes(self, position_size: Optional[float] = None) -> pd.Series:
-        """Get position sizes for trading.
-        
-        Args:
-            position_size: Base position size. If None, uses config value
-            
-        Returns:
-            Series with position sizes for each asset
-            
-        Raises:
-            ValueError: If model not yet fit
-        """
-        if self.hedge_ratios is None:
-            raise ValueError("Must fit model before getting position sizes")
-            
-        position_size = position_size or self.config.position_size
-        return self.hedge_ratios.iloc[0] * position_size
 
     def is_cointegrated(self, significance: Optional[float] = None) -> bool:
         """Check if assets are cointegrated at given significance level.

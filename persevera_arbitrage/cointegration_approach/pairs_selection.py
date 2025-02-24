@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+from typing import List, Optional
 import pandas as pd
 import itertools
 from dataclasses import dataclass
@@ -11,10 +11,10 @@ from .utils import get_hurst_exponent
 @dataclass
 class PairSelectionCriteria:
     """Configuration for pair selection criteria."""
-    max_half_life: int = 30           # Maximum acceptable half-life in days
+    max_half_life: int = 60           # Maximum acceptable half-life in days
+    min_half_life: int = 1            # Maximum acceptable half-life in days
     hurst_threshold: float = 0.5      # Maximum Hurst exponent for mean reversion
-    significance_level: float = 0.05   # Statistical significance for cointegration tests
-    min_correlation: float = 0.7      # Minimum correlation between pairs
+    significance_level: float = 0.05  # Statistical significance for cointegration tests
 
 @dataclass
 class PairTestResult:
@@ -25,7 +25,6 @@ class PairTestResult:
     is_cointegrated_engle_granger: bool
     half_life: float
     hurst_exponent: float
-    correlation: float
     hedge_ratio: float
     passed_all_criteria: bool
 
@@ -37,7 +36,6 @@ class CointegrationPairSelector:
     1. Both Johansen and Engle-Granger tests must indicate cointegration
     2. Spread must show mean-reverting behavior (Hurst exponent < threshold)
     3. Half-life must be below specified threshold
-    4. Assets must have sufficient correlation
     """
     
     def __init__(self, 
@@ -91,26 +89,31 @@ class CointegrationPairSelector:
             
         Returns:
             PairTestResult containing test results
-        """
-        # Check correlation
-        correlation = pair_data[asset1].corr(pair_data[asset2])
-        
+        """        
         # Test cointegration using Johansen
-        self.johansen.fit(pair_data)
+        jh_results = self.johansen.fit(pair_data)
         is_cointegrated_johansen = self.johansen.is_cointegrated(significance='95%')
         
         # Test cointegration using Engle-Granger (both directions)
-        self.engle_granger.fit(pair_data, dependent_variable=asset1)
+        eg_results_1 = self.engle_granger.fit(pair_data, dependent_variable=asset1)
         is_cointegrated_eg_1 = self.engle_granger.is_cointegrated(significance=0.05)
         
-        self.engle_granger.fit(pair_data, dependent_variable=asset2)
+        eg_results_2 = self.engle_granger.fit(pair_data, dependent_variable=asset2)
         is_cointegrated_eg_2 = self.engle_granger.is_cointegrated(significance=0.05)
         
         is_cointegrated_engle_granger = is_cointegrated_eg_1 and is_cointegrated_eg_2
         
-        # Get spread properties
-        spread = self.johansen.construct_mean_reverting_portfolio(pair_data)
-        half_life = self.johansen.half_life
+        # Due to Engle-Granger's test sensitivity to the ordering of variables, we select the
+        # combination that generated the lowest t-statistic
+        if eg_results_1.test_results.adf_statistic < eg_results_2.test_results.adf_statistic:
+            eg_results = eg_results_1
+        else:
+            eg_results = eg_results_2
+
+        # After performing both tests, we use the residuals from the Engle-Granger test
+        # as the spread
+        spread = eg_results.residuals
+        half_life = eg_results.half_life
         hurst_exponent = get_hurst_exponent(spread)
         
         # Get hedge ratio from Johansen test
@@ -120,9 +123,8 @@ class CointegrationPairSelector:
         passed_all_criteria = (
             is_cointegrated_johansen and
             is_cointegrated_engle_granger and
-            half_life < self.criteria.max_half_life and
-            hurst_exponent < self.criteria.hurst_threshold and
-            correlation > self.criteria.min_correlation
+            self.criteria.min_half_life <= half_life <= self.criteria.max_half_life and
+            hurst_exponent < self.criteria.hurst_threshold
         )
         
         return PairTestResult(
@@ -132,14 +134,13 @@ class CointegrationPairSelector:
             is_cointegrated_engle_granger=is_cointegrated_engle_granger,
             half_life=half_life,
             hurst_exponent=hurst_exponent,
-            correlation=correlation,
             hedge_ratio=hedge_ratio,
             passed_all_criteria=passed_all_criteria
         )
     
-    def get_best_pairs(self, 
-                      price_data: pd.DataFrame, 
-                      n_pairs: int = 5) -> List[PairTestResult]:
+    def get_best_pairs(self,
+                       price_data: pd.DataFrame, 
+                       n_pairs: int = 5) -> List[PairTestResult]:
         """
         Get the best n pairs sorted by half-life.
         
