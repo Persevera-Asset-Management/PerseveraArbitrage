@@ -2,6 +2,7 @@ from typing import Optional, Dict, Tuple, List
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass
+from ..cointegration_approach.utils import calculate_zscore
 
 @dataclass
 class CaldeiraMouraConfig:
@@ -13,6 +14,7 @@ class CaldeiraMouraConfig:
     max_holding_days: int = 50
     portfolio_size: int = 20             # Number of pairs in portfolio (1/20 allocation each)
     initial_capital: float = 1_000_000   # Initial capital for position sizing
+    lookback_window: int = 252          # Window for z-score calculation (1 year)
 
 class CaldeiraMouraTradingRule:
     """
@@ -38,14 +40,14 @@ class CaldeiraMouraTradingRule:
         self.available_capital = self.config.initial_capital
         
     def generate_signals(self,
-                        zscore: pd.Series,
+                        spread: pd.Series,
                         prices: pd.DataFrame,
                         pair_id: str,
                         beta: float) -> Tuple[pd.Series, pd.Series]:
         """Generate trading signals and position sizes for a pair.
         
         Args:
-            zscore: Z-score series for the pair
+            spread: Spread series for the pair
             prices: Price data for the pair (long and short candidates)
             pair_id: Unique identifier for the pair
             beta: Hedge ratio for the pair
@@ -55,6 +57,9 @@ class CaldeiraMouraTradingRule:
             - Series with trading signals (1: long-short, -1: short-long, 0: no position)
             - Series with position sizes
         """
+        # Calculate z-score using utility function
+        zscore = calculate_zscore(spread, lookback=self.config.lookback_window)
+        
         signals = pd.Series(0, index=zscore.index)
         sizes = pd.Series(0.0, index=zscore.index)
         
@@ -62,6 +67,9 @@ class CaldeiraMouraTradingRule:
             date = zscore.index[i]
             z = zscore.iloc[i]
             
+            if pd.isna(z):
+                continue
+                
             # Check existing position
             if pair_id in self.positions:
                 self.position_days[pair_id] += 1
