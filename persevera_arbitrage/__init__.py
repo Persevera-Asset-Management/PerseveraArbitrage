@@ -3,7 +3,7 @@ import logging
 # Configure logging for the entire package
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s.%(msecs)03d - %(name)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
@@ -17,4 +17,4 @@ logger.setLevel(logging.INFO)
 if not logger.handlers:
     logger.addHandler(logging.NullHandler())
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
