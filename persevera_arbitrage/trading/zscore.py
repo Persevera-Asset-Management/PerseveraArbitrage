@@ -157,7 +157,7 @@ class CaldeiraMouraTradingRule:
                 current_prices = prices.iloc[i]
                 
                 # Calculate returns based on equal dollar allocation
-                portfolio_return, _, _, _ = self._calculate_portfolio_return(current_prices)
+                current_trade_return, leg1_return, leg2_return, pnl_amount = self._calculate_portfolio_return(current_prices)
                 
                 if self.position == 1:
                     position_type = f"LONG {asset1} / SHORT {asset2}"
@@ -165,7 +165,7 @@ class CaldeiraMouraTradingRule:
                     position_type = f"SHORT {asset1} / LONG {asset2}"
                 
                 if self.config.verbose:
-                    logger.info(f"{date}: Holding {position_type} position (Day {self.position_days}, Z-score: {z:.2f}, Return: {portfolio_return:.2%})")
+                    logger.info(f"{date}: Holding {position_type} position (Day {self.position_days}, Z-score: {z:.2f}, Return: {current_trade_return:.2%})")
                 
                 # Check closing conditions
                 should_close = False
@@ -177,9 +177,9 @@ class CaldeiraMouraTradingRule:
                 elif self.position == -1 and z < self.config.exit_threshold_short:
                     should_close = True
                     close_reason = f"Z-score ({z:.2f}) below exit threshold ({self.config.exit_threshold_short})"
-                elif portfolio_return <= -self.config.stop_loss:  # Use negative of stop_loss since it's stored as positive
+                elif current_trade_return <= -self.config.stop_loss:  # Use negative of stop_loss since it's stored as positive
                     should_close = True
-                    close_reason = f"Stop loss triggered ({portfolio_return:.2%} <= -{self.config.stop_loss:.2%})"
+                    close_reason = f"Stop loss triggered ({current_trade_return:.2%} <= -{self.config.stop_loss:.2%})"
                 elif self.position_days >= self.config.max_holding_days:
                     should_close = True
                     close_reason = f"Maximum holding period reached ({self.position_days} days)"
@@ -291,7 +291,7 @@ class CaldeiraMouraTradingRule:
         pnl_info = ""
         if self.entry_prices is not None and current_prices is not None:
             # Calculate returns based on equal dollar allocation to each leg
-            portfolio_return, leg1_return, leg2_return, pnl_amount = self._calculate_portfolio_return(current_prices)
+            current_trade_return, leg1_return, leg2_return, pnl_amount = self._calculate_portfolio_return(current_prices)
                 
             # Add detailed leg returns to the P&L info
             if self.position == 1:
@@ -299,7 +299,7 @@ class CaldeiraMouraTradingRule:
             else:
                 leg_info = f" [SHORT {asset1}: {leg1_return:.2%}, LONG {asset2}: {leg2_return:.2%}]"
                 
-            pnl_info = f", P&L: {pnl_amount:,.2f} ({portfolio_return:.2%}){leg_info}"
+            pnl_info = f", P&L: {pnl_amount:,.2f} ({current_trade_return:.2%}){leg_info}"
             
             # Update available capital with P&L
             self.available_capital = position_size + pnl_amount
@@ -310,7 +310,7 @@ class CaldeiraMouraTradingRule:
                 self.current_trade.exit_prices = current_prices.copy()
                 self.current_trade.leg1_return = leg1_return
                 self.current_trade.leg2_return = leg2_return
-                self.current_trade.portfolio_return = portfolio_return
+                self.current_trade.portfolio_return = current_trade_return
                 self.current_trade.pnl_amount = pnl_amount
                 self.current_trade.holding_days = holding_days
                 self.current_trade.exit_reason = close_reason
@@ -396,7 +396,7 @@ class CaldeiraMouraTradingRule:
             annualized_return, annualized_volatility, sharpe_ratio = self._calculate_annualized_metrics()
             
             # Calculate Calmar ratio (annualized return / max drawdown)
-            if self.max_drawdown > 0:
+            if self.max_drawdown < 0:
                 calmar_ratio = annualized_return / self.max_drawdown
         
         stats = {
@@ -635,7 +635,7 @@ class CaldeiraMouraTradingRule:
             
         Returns:
             Tuple containing:
-            - portfolio_return: Combined return of both legs
+            - current_trade_return: Return of the current trade
             - leg1_return: Return of the first leg
             - leg2_return: Return of the second leg
             - pnl_amount: Dollar amount of profit/loss
@@ -650,9 +650,9 @@ class CaldeiraMouraTradingRule:
             leg2_return = (current_prices / self.entry_prices - 1).iloc[1]  # Long return
             
         # Average of both legs
-        portfolio_return = (leg1_return + leg2_return) / 2
+        current_trade_return = (leg1_return + leg2_return) / 2
         
         # Calculate P&L amount
-        pnl_amount = portfolio_return * self.position_size
+        pnl_amount = current_trade_return * self.position_size
         
-        return portfolio_return, leg1_return, leg2_return, pnl_amount
+        return current_trade_return, leg1_return, leg2_return, pnl_amount
