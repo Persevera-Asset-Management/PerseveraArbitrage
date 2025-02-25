@@ -110,11 +110,11 @@ class CaldeiraMouraTradingRule:
                 if self.position == 1:
                     # Long asset1, short asset2 with equal dollar amounts
                     leg1_return = (current_prices.iloc[0] - self.entry_prices.iloc[0]) / self.entry_prices.iloc[0]  # Long return
-                    leg2_return = (self.entry_prices.iloc[1] - current_prices.iloc[1]) / self.entry_prices.iloc[1]  # Short return
+                    leg2_return = - (current_prices.iloc[1] - self.entry_prices.iloc[1]) / self.entry_prices.iloc[1]  # Short return
                     portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
                 else:
                     # Short asset1, long asset2 with equal dollar amounts
-                    leg1_return = (self.entry_prices.iloc[0] - current_prices.iloc[0]) / self.entry_prices.iloc[0]  # Short return
+                    leg1_return = - (current_prices.iloc[0] - self.entry_prices.iloc[0]) / self.entry_prices.iloc[0]  # Short return
                     leg2_return = (current_prices.iloc[1] - self.entry_prices.iloc[1]) / self.entry_prices.iloc[1]  # Long return
                     portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
                 
