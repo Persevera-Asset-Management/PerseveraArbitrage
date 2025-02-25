@@ -15,7 +15,7 @@ class CaldeiraMouraConfig:
     entry_threshold: float = 2.0
     exit_threshold_short: float = 0.75   # Close short when z < 0.75
     exit_threshold_long: float = -0.50   # Close long when z > -0.50
-    stop_loss: float = -0.07              # 7% stop loss
+    stop_loss: float = 0.07              # 7% stop loss (positive value for easier understanding)
     max_holding_days: int = 50
     initial_capital: float = 1_000_000   # Initial capital for position sizing
     lookback_window: int = 252           # Window for z-score calculation (1 year)
@@ -56,7 +56,7 @@ class CaldeiraMouraTradingRule:
             simulated_spread: Spread series for the pair
             historical_spread: Optional historical spread data for hybrid z-score calculation
             prices: Price data for the pair (long and short candidates)
-            beta: Hedge ratio for the pair
+            beta: Hedge ratio for the pair (used for z-score calculation, not for position sizing)
             
         Returns:
             Tuple containing:
@@ -72,6 +72,7 @@ class CaldeiraMouraTradingRule:
             self.historical_spread = historical_spread
             if self.config.verbose:
                 logger.info(f"Stored historical spread data for {pair_name} with {len(historical_spread)} data points")
+                logger.info(f"Using hedge ratio (beta): {beta:.4f} for spread calculation only")
         
         # Calculate z-score using hybrid approach if historical data available
         if self.historical_spread is not None:
@@ -104,11 +105,18 @@ class CaldeiraMouraTradingRule:
                 self.position_days += 1
                 current_prices = prices.iloc[i]
                 
-                # Calculate returns for market-neutral position
-                # If long-short (1): long first asset, short second
-                # If short-long (-1): short first asset, long second
-                returns = (current_prices - self.entry_prices) / self.entry_prices
-                portfolio_return = self.position * (returns.iloc[0] - returns.iloc[1])
+                # Calculate returns based on equal dollar allocation
+                # We calculate the return on each leg separately and then combine them
+                if self.position == 1:
+                    # Long asset1, short asset2 with equal dollar amounts
+                    leg1_return = (current_prices[0] - self.entry_prices[0]) / self.entry_prices[0]  # Long return
+                    leg2_return = (self.entry_prices[1] - current_prices[1]) / self.entry_prices[1]  # Short return
+                    portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
+                else:
+                    # Short asset1, long asset2 with equal dollar amounts
+                    leg1_return = (self.entry_prices[0] - current_prices[0]) / self.entry_prices[0]  # Short return
+                    leg2_return = (current_prices[1] - self.entry_prices[1]) / self.entry_prices[1]  # Long return
+                    portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
                 
                 if self.position == 1:
                     position_type = f"LONG {asset1} / SHORT {asset2}"
@@ -128,9 +136,9 @@ class CaldeiraMouraTradingRule:
                 elif self.position == -1 and z < self.config.exit_threshold_short:
                     should_close = True
                     close_reason = f"Z-score ({z:.2f}) below exit threshold ({self.config.exit_threshold_short})"
-                elif portfolio_return <= self.config.stop_loss:
+                elif portfolio_return <= -self.config.stop_loss:  # Use negative of stop_loss since it's stored as positive
                     should_close = True
-                    close_reason = f"Stop loss triggered ({portfolio_return:.2%})"
+                    close_reason = f"Stop loss triggered ({portfolio_return:.2%} <= -{self.config.stop_loss:.2%})"
                 elif self.position_days >= self.config.max_holding_days:
                     should_close = True
                     close_reason = f"Maximum holding period reached ({self.position_days} days)"
@@ -200,6 +208,9 @@ class CaldeiraMouraTradingRule:
         self.position_size = size
         self.available_capital = 0  # All capital is now allocated
         
+        # Calculate the dollar amount allocated to each leg
+        leg_allocation = size / 2  # Equal dollar allocation to each leg
+        
         if self.config.verbose:
             if signal == 1:
                 position_type = f"LONG {asset1} / SHORT {asset2}"
@@ -208,7 +219,7 @@ class CaldeiraMouraTradingRule:
                 
             logger.info(f"Position opened: {position_type}")
             logger.info(f"Entry prices: {asset1}=${prices[0]:,.2f}, {asset2}=${prices[1]:,.2f}")
-            logger.info(f"Position size: ${size:,.2f}")
+            logger.info(f"Position size: ${size:,.2f} (${leg_allocation:,.2f} per leg)")
             logger.info(f"Available capital: ${self.available_capital:,.2f}")
     
     def _close_position(self, asset1: str = None, asset2: str = None, current_prices: pd.Series = None) -> None:
@@ -228,10 +239,27 @@ class CaldeiraMouraTradingRule:
         # Calculate profit/loss if we have both entry and current prices
         pnl_info = ""
         if self.entry_prices is not None and current_prices is not None:
-            returns = (current_prices - self.entry_prices) / self.entry_prices
-            portfolio_return = self.position * (returns.iloc[0] - returns.iloc[1])
+            # Calculate returns based on equal dollar allocation to each leg
+            if self.position == 1:
+                # Long asset1, short asset2 with equal dollar amounts
+                leg1_return = (current_prices[0] - self.entry_prices[0]) / self.entry_prices[0]  # Long return
+                leg2_return = (self.entry_prices[1] - current_prices[1]) / self.entry_prices[1]  # Short return
+                portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
+            else:
+                # Short asset1, long asset2 with equal dollar amounts
+                leg1_return = (self.entry_prices[0] - current_prices[0]) / self.entry_prices[0]  # Short return
+                leg2_return = (current_prices[1] - self.entry_prices[1]) / self.entry_prices[1]  # Long return
+                portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
+                
             pnl_amount = portfolio_return * position_size
-            pnl_info = f", P&L: ${pnl_amount:,.2f} ({portfolio_return:.2%})"
+            
+            # Add detailed leg returns to the P&L info
+            if self.position == 1:
+                leg_info = f" [LONG {asset1}: {leg1_return:.2%}, SHORT {asset2}: {leg2_return:.2%}]"
+            else:
+                leg_info = f" [SHORT {asset1}: {leg1_return:.2%}, LONG {asset2}: {leg2_return:.2%}]"
+                
+            pnl_info = f", P&L: ${pnl_amount:,.2f} ({portfolio_return:.2%}){leg_info}"
         
         # Return capital to available pool
         self.available_capital = position_size
@@ -257,9 +285,24 @@ class CaldeiraMouraTradingRule:
         """Get current portfolio statistics."""
         allocated_capital = self.position_size if self.position != 0 else 0.0
         
+        # Get position type with asset names if available
+        position_type = "NONE"
+        if self.position != 0 and hasattr(self, 'entry_prices') and self.entry_prices is not None and isinstance(self.entry_prices, pd.Series) and len(self.entry_prices) >= 2:
+            asset_names = self.entry_prices.index
+            if len(asset_names) >= 2:
+                asset1, asset2 = asset_names[0], asset_names[1]
+                if self.position == 1:
+                    position_type = f"LONG {asset1} / SHORT {asset2}"
+                else:
+                    position_type = f"SHORT {asset1} / LONG {asset2}"
+            else:
+                position_type = "LONG-SHORT" if self.position == 1 else "SHORT-LONG"
+        elif self.position != 0:
+            position_type = "LONG-SHORT" if self.position == 1 else "SHORT-LONG"
+        
         stats = {
             'has_position': self.position != 0,
-            'position_type': "LONG-SHORT" if self.position == 1 else "SHORT-LONG" if self.position == -1 else "NONE",
+            'position_type': position_type,
             'position_days': self.position_days if self.position != 0 else 0,
             'available_capital': self.available_capital,
             'allocated_capital': allocated_capital,
