@@ -65,7 +65,7 @@ class CaldeiraMouraTradingRule:
         """
         # Construct pair name by joining column names with underscore
         pair_name = '_'.join(prices.columns)
-        asset1, asset2 = prices.columns.iloc[0], prices.columns.iloc[1]
+        asset1, asset2 = prices.columns[0], prices.columns[1]
 
         # Store historical spread if provided
         if historical_spread is not None:
