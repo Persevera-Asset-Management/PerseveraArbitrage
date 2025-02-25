@@ -106,17 +106,7 @@ class CaldeiraMouraTradingRule:
                 current_prices = prices.iloc[i]
                 
                 # Calculate returns based on equal dollar allocation
-                # We calculate the return on each leg separately and then combine them
-                if self.position == 1:
-                    # Long asset1, short asset2 with equal dollar amounts
-                    leg1_return = (current_prices.iloc[0] - self.entry_prices.iloc[0]) / self.entry_prices.iloc[0]  # Long return
-                    leg2_return = - (current_prices.iloc[1] - self.entry_prices.iloc[1]) / self.entry_prices.iloc[1]  # Short return
-                    portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
-                else:
-                    # Short asset1, long asset2 with equal dollar amounts
-                    leg1_return = - (current_prices.iloc[0] - self.entry_prices.iloc[0]) / self.entry_prices.iloc[0]  # Short return
-                    leg2_return = (current_prices.iloc[1] - self.entry_prices.iloc[1]) / self.entry_prices.iloc[1]  # Long return
-                    portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
+                portfolio_return, _, _, _ = self._calculate_portfolio_return(current_prices)
                 
                 if self.position == 1:
                     position_type = f"LONG {asset1} / SHORT {asset2}"
@@ -240,19 +230,8 @@ class CaldeiraMouraTradingRule:
         pnl_info = ""
         if self.entry_prices is not None and current_prices is not None:
             # Calculate returns based on equal dollar allocation to each leg
-            if self.position == 1:
-                # Long asset1, short asset2 with equal dollar amounts
-                leg1_return = (current_prices.iloc[0] - self.entry_prices.iloc[0]) / self.entry_prices.iloc[0]  # Long return
-                leg2_return = (self.entry_prices.iloc[1] - current_prices.iloc[1]) / self.entry_prices.iloc[1]  # Short return
-                portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
-            else:
-                # Short asset1, long asset2 with equal dollar amounts
-                leg1_return = (self.entry_prices.iloc[0] - current_prices.iloc[0]) / self.entry_prices.iloc[0]  # Short return
-                leg2_return = (current_prices.iloc[1] - self.entry_prices.iloc[1]) / self.entry_prices.iloc[1]  # Long return
-                portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
+            portfolio_return, leg1_return, leg2_return, pnl_amount = self._calculate_portfolio_return(current_prices)
                 
-            pnl_amount = portfolio_return * position_size
-            
             # Add detailed leg returns to the P&L info
             if self.position == 1:
                 leg_info = f" [LONG {asset1}: {leg1_return:.2%}, SHORT {asset2}: {leg2_return:.2%}]"
@@ -260,9 +239,12 @@ class CaldeiraMouraTradingRule:
                 leg_info = f" [SHORT {asset1}: {leg1_return:.2%}, LONG {asset2}: {leg2_return:.2%}]"
                 
             pnl_info = f", P&L: ${pnl_amount:,.2f} ({portfolio_return:.2%}){leg_info}"
-        
-        # Return capital to available pool
-        self.available_capital = position_size
+            
+            # Update available capital with P&L
+            self.available_capital = position_size + pnl_amount
+        else:
+            # If we don't have prices to calculate P&L, just return the original position size
+            self.available_capital = position_size
         
         if self.config.verbose:
             logger.info(f"Position closed: {position_type}{pnl_info}")
@@ -284,6 +266,11 @@ class CaldeiraMouraTradingRule:
     def get_portfolio_stats(self) -> Dict[str, float]:
         """Get current portfolio statistics."""
         allocated_capital = self.position_size if self.position != 0 else 0.0
+        total_capital = self.available_capital + allocated_capital
+        
+        # Calculate cumulative P&L and return
+        cumulative_pnl = total_capital - self.config.initial_capital
+        cumulative_return = cumulative_pnl / self.config.initial_capital
         
         # Get position type with asset names if available
         position_type = "NONE"
@@ -306,11 +293,14 @@ class CaldeiraMouraTradingRule:
             'position_days': self.position_days if self.position != 0 else 0,
             'available_capital': self.available_capital,
             'allocated_capital': allocated_capital,
-            'total_capital': self.available_capital + allocated_capital
+            'total_capital': total_capital,
+            'cumulative_pnl': cumulative_pnl,
+            'cumulative_return': cumulative_return
         }
         
         if self.config.verbose:
             logger.info(f"Portfolio stats: {stats}")
+            logger.info(f"Cumulative P&L: ${cumulative_pnl:,.2f} ({cumulative_return:.2%})")
         
         return stats
     
@@ -318,6 +308,13 @@ class CaldeiraMouraTradingRule:
         """Reset trading rule state."""
         if self.config.verbose:
             logger.info("Resetting trading rule state")
+            
+            # Log final performance before reset if capital has changed
+            current_capital = self.available_capital + (self.position_size if self.position != 0 else 0.0)
+            if current_capital != self.config.initial_capital:
+                pnl = current_capital - self.config.initial_capital
+                pnl_return = pnl / self.config.initial_capital
+                logger.info(f"Final performance before reset: P&L=${pnl:,.2f} ({pnl_return:.2%})")
         
         self.position = 0
         self.position_days = 0
@@ -328,3 +325,34 @@ class CaldeiraMouraTradingRule:
         
         if self.config.verbose:
             logger.info(f"Trading rule reset. Available capital: ${self.available_capital:,.2f}")
+
+    def _calculate_portfolio_return(self, current_prices: pd.Series) -> Tuple[float, float, float, float]:
+        """
+        Calculate returns based on equal dollar allocation to each leg.
+        
+        Args:
+            current_prices: Current prices for the pair
+            
+        Returns:
+            Tuple containing:
+            - portfolio_return: Combined return of both legs
+            - leg1_return: Return of the first leg
+            - leg2_return: Return of the second leg
+            - pnl_amount: Dollar amount of profit/loss
+        """
+        if self.position == 1:
+            # Long asset1, short asset2 with equal dollar amounts
+            leg1_return = (current_prices / self.entry_prices - 1).iloc[0]  # Long return
+            leg2_return = - (current_prices / self.entry_prices - 1).iloc[1]  # Short return
+        else:
+            # Short asset1, long asset2 with equal dollar amounts
+            leg1_return = - (current_prices / self.entry_prices - 1).iloc[0]  # Short return
+            leg2_return = (current_prices / self.entry_prices - 1).iloc[1]  # Long return
+            
+        # Average of both legs
+        portfolio_return = (leg1_return + leg2_return) / 2
+        
+        # Calculate P&L amount
+        pnl_amount = portfolio_return * self.position_size
+        
+        return portfolio_return, leg1_return, leg2_return, pnl_amount
