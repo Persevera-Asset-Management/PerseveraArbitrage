@@ -49,8 +49,7 @@ class CaldeiraMouraTradingRule:
                          simulated_spread: pd.Series,
                          historical_spread: Optional[pd.Series],
                          prices: pd.DataFrame,
-                         beta: float,
-                         pair_name: str = "PAIR") -> Tuple[pd.Series, pd.Series]:
+                         beta: float) -> Tuple[pd.Series, pd.Series]:
         """Generate trading signals and position sizes for a pair.
         
         Args:
@@ -58,13 +57,16 @@ class CaldeiraMouraTradingRule:
             historical_spread: Optional historical spread data for hybrid z-score calculation
             prices: Price data for the pair (long and short candidates)
             beta: Hedge ratio for the pair
-            pair_name: Optional name for the pair (for logging purposes)
             
         Returns:
             Tuple containing:
             - Series with trading signals (1: long-short, -1: short-long, 0: no position)
             - Series with position sizes
         """
+        # Construct pair name by joining column names with underscore
+        pair_name = '_'.join(prices.columns)
+        asset1, asset2 = prices.columns[0], prices.columns[1]
+
         # Store historical spread if provided
         if historical_spread is not None:
             self.historical_spread = historical_spread
@@ -108,10 +110,13 @@ class CaldeiraMouraTradingRule:
                 returns = (current_prices - self.entry_prices) / self.entry_prices
                 portfolio_return = self.position * (returns.iloc[0] - returns.iloc[1])
                 
-                position_type = "LONG-SHORT" if self.position == 1 else "SHORT-LONG"
+                if self.position == 1:
+                    position_type = f"LONG {asset1} / SHORT {asset2}"
+                else:
+                    position_type = f"SHORT {asset1} / LONG {asset2}"
                 
                 if self.config.verbose:
-                    logger.info(f"{date}: Holding {position_type} position for {pair_name} (Day {self.position_days}, Z-score: {z:.2f}, Return: {portfolio_return:.2%})")
+                    logger.info(f"{date}: Holding {position_type} position (Day {self.position_days}, Z-score: {z:.2f}, Return: {portfolio_return:.2%})")
                 
                 # Check closing conditions
                 should_close = False
@@ -132,10 +137,10 @@ class CaldeiraMouraTradingRule:
                 
                 if should_close:
                     if self.config.verbose:
-                        logger.info(f"{date}: CLOSING {position_type} position for {pair_name}. Reason: {close_reason}")
+                        logger.info(f"{date}: CLOSING {position_type} position. Reason: {close_reason}")
                     signals.iloc[i] = 0
                     sizes.iloc[i] = 0
-                    self._close_position()
+                    self._close_position(asset1, asset2, current_prices)
                 else:
                     signals.iloc[i] = self.position
                     sizes.iloc[i] = self.position_size
@@ -146,13 +151,16 @@ class CaldeiraMouraTradingRule:
                 signal = -1 if z > 0 else 1
                 position_size = self.available_capital  # Use all available capital
                 
-                position_type = "LONG-SHORT" if signal == 1 else "SHORT-LONG"
+                if signal == 1:
+                    position_type = f"LONG {asset1} / SHORT {asset2}"
+                else:
+                    position_type = f"SHORT {asset1} / LONG {asset2}"
                 
                 if self.config.verbose:
-                    logger.info(f"{date}: OPENING {position_type} position for {pair_name}. Z-score: {z:.2f}, Size: ${position_size:,.2f}")
+                    logger.info(f"{date}: OPENING {position_type} position. Z-score: {z:.2f}, Size: ${position_size:,.2f}")
                 signals.iloc[i] = signal
                 sizes.iloc[i] = position_size
-                self._open_position(signal, prices.iloc[i], position_size)
+                self._open_position(signal, prices.iloc[i], position_size, asset1, asset2)
             elif self.config.verbose and i % 20 == 0:  # Log every 20 days when no action is taken to reduce verbosity
                 logger.info(f"{date}: No trading action for {pair_name}. Z-score: {z:.2f}")
         
@@ -184,7 +192,7 @@ class CaldeiraMouraTradingRule:
         # Filter to just simulated period
         return zscore.loc[simulated_spread.index]
     
-    def _open_position(self, signal: int, prices: pd.Series, size: float) -> None:
+    def _open_position(self, signal: int, prices: pd.Series, size: float, asset1: str, asset2: str) -> None:
         """Open new position."""
         self.position = signal
         self.position_days = 0
@@ -193,23 +201,48 @@ class CaldeiraMouraTradingRule:
         self.available_capital = 0  # All capital is now allocated
         
         if self.config.verbose:
-            position_type = "LONG-SHORT" if signal == 1 else "SHORT-LONG"
+            if signal == 1:
+                position_type = f"LONG {asset1} / SHORT {asset2}"
+            else:
+                position_type = f"SHORT {asset1} / LONG {asset2}"
+                
             logger.info(f"Position opened: {position_type}")
-            logger.info(f"Entry prices: {prices.to_dict()}")
+            logger.info(f"Entry prices: {asset1}=${prices[0]:,.2f}, {asset2}=${prices[1]:,.2f}")
             logger.info(f"Position size: ${size:,.2f}")
             logger.info(f"Available capital: ${self.available_capital:,.2f}")
     
-    def _close_position(self) -> None:
+    def _close_position(self, asset1: str = None, asset2: str = None, current_prices: pd.Series = None) -> None:
         """Close current position."""
         position_size = self.position_size
-        position_type = "LONG-SHORT" if self.position == 1 else "SHORT-LONG"
+        
+        if asset1 and asset2:
+            if self.position == 1:
+                position_type = f"LONG {asset1} / SHORT {asset2}"
+            else:
+                position_type = f"SHORT {asset1} / LONG {asset2}"
+        else:
+            position_type = "LONG-SHORT" if self.position == 1 else "SHORT-LONG"
+            
         holding_days = self.position_days
+        
+        # Calculate profit/loss if we have both entry and current prices
+        pnl_info = ""
+        if self.entry_prices is not None and current_prices is not None:
+            returns = (current_prices - self.entry_prices) / self.entry_prices
+            portfolio_return = self.position * (returns.iloc[0] - returns.iloc[1])
+            pnl_amount = portfolio_return * position_size
+            pnl_info = f", P&L: ${pnl_amount:,.2f} ({portfolio_return:.2%})"
         
         # Return capital to available pool
         self.available_capital = position_size
         
         if self.config.verbose:
-            logger.info(f"Position closed: {position_type}")
+            logger.info(f"Position closed: {position_type}{pnl_info}")
+            # If we have current prices, log them
+            if current_prices is not None and asset1 and asset2:
+                logger.info(f"Closing prices: {asset1}=${current_prices[0]:,.2f}, {asset2}=${current_prices[1]:,.2f}")
+                if self.entry_prices is not None:
+                    logger.info(f"Entry prices: {asset1}=${self.entry_prices[0]:,.2f}, {asset2}=${self.entry_prices[1]:,.2f}")
             logger.info(f"Holding period: {holding_days} days")
             logger.info(f"Capital returned: ${position_size:,.2f}")
             logger.info(f"Available capital: ${self.available_capital:,.2f}")
