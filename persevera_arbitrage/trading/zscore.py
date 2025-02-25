@@ -65,7 +65,7 @@ class CaldeiraMouraTradingRule:
         """
         # Construct pair name by joining column names with underscore
         pair_name = '_'.join(prices.columns)
-        asset1, asset2 = prices.columns[0], prices.columns[1]
+        asset1, asset2 = prices.columns.iloc[0], prices.columns.iloc[1]
 
         # Store historical spread if provided
         if historical_spread is not None:
@@ -109,13 +109,13 @@ class CaldeiraMouraTradingRule:
                 # We calculate the return on each leg separately and then combine them
                 if self.position == 1:
                     # Long asset1, short asset2 with equal dollar amounts
-                    leg1_return = (current_prices[0] - self.entry_prices[0]) / self.entry_prices[0]  # Long return
-                    leg2_return = (self.entry_prices[1] - current_prices[1]) / self.entry_prices[1]  # Short return
+                    leg1_return = (current_prices.iloc[0] - self.entry_prices.iloc[0]) / self.entry_prices.iloc[0]  # Long return
+                    leg2_return = (self.entry_prices.iloc[1] - current_prices.iloc[1]) / self.entry_prices.iloc[1]  # Short return
                     portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
                 else:
                     # Short asset1, long asset2 with equal dollar amounts
-                    leg1_return = (self.entry_prices[0] - current_prices[0]) / self.entry_prices[0]  # Short return
-                    leg2_return = (current_prices[1] - self.entry_prices[1]) / self.entry_prices[1]  # Long return
+                    leg1_return = (self.entry_prices.iloc[0] - current_prices.iloc[0]) / self.entry_prices.iloc[0]  # Short return
+                    leg2_return = (current_prices.iloc[1] - self.entry_prices.iloc[1]) / self.entry_prices.iloc[1]  # Long return
                     portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
                 
                 if self.position == 1:
@@ -218,7 +218,7 @@ class CaldeiraMouraTradingRule:
                 position_type = f"SHORT {asset1} / LONG {asset2}"
                 
             logger.info(f"Position opened: {position_type}")
-            logger.info(f"Entry prices: {asset1}=${prices[0]:,.2f}, {asset2}=${prices[1]:,.2f}")
+            logger.info(f"Entry prices: {asset1}=${prices.iloc[0]:,.2f}, {asset2}=${prices.iloc[1]:,.2f}")
             logger.info(f"Position size: ${size:,.2f} (${leg_allocation:,.2f} per leg)")
             logger.info(f"Available capital: ${self.available_capital:,.2f}")
     
@@ -242,13 +242,13 @@ class CaldeiraMouraTradingRule:
             # Calculate returns based on equal dollar allocation to each leg
             if self.position == 1:
                 # Long asset1, short asset2 with equal dollar amounts
-                leg1_return = (current_prices[0] - self.entry_prices[0]) / self.entry_prices[0]  # Long return
-                leg2_return = (self.entry_prices[1] - current_prices[1]) / self.entry_prices[1]  # Short return
+                leg1_return = (current_prices.iloc[0] - self.entry_prices.iloc[0]) / self.entry_prices.iloc[0]  # Long return
+                leg2_return = (self.entry_prices.iloc[1] - current_prices.iloc[1]) / self.entry_prices.iloc[1]  # Short return
                 portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
             else:
                 # Short asset1, long asset2 with equal dollar amounts
-                leg1_return = (self.entry_prices[0] - current_prices[0]) / self.entry_prices[0]  # Short return
-                leg2_return = (current_prices[1] - self.entry_prices[1]) / self.entry_prices[1]  # Long return
+                leg1_return = (self.entry_prices.iloc[0] - current_prices.iloc[0]) / self.entry_prices.iloc[0]  # Short return
+                leg2_return = (current_prices.iloc[1] - self.entry_prices.iloc[1]) / self.entry_prices.iloc[1]  # Long return
                 portfolio_return = (leg1_return + leg2_return) / 2  # Average of both legs
                 
             pnl_amount = portfolio_return * position_size
@@ -268,9 +268,9 @@ class CaldeiraMouraTradingRule:
             logger.info(f"Position closed: {position_type}{pnl_info}")
             # If we have current prices, log them
             if current_prices is not None and asset1 and asset2:
-                logger.info(f"Closing prices: {asset1}=${current_prices[0]:,.2f}, {asset2}=${current_prices[1]:,.2f}")
+                logger.info(f"Closing prices: {asset1}=${current_prices.iloc[0]:,.2f}, {asset2}=${current_prices.iloc[1]:,.2f}")
                 if self.entry_prices is not None:
-                    logger.info(f"Entry prices: {asset1}=${self.entry_prices[0]:,.2f}, {asset2}=${self.entry_prices[1]:,.2f}")
+                    logger.info(f"Entry prices: {asset1}=${self.entry_prices.iloc[0]:,.2f}, {asset2}=${self.entry_prices.iloc[1]:,.2f}")
             logger.info(f"Holding period: {holding_days} days")
             logger.info(f"Capital returned: ${position_size:,.2f}")
             logger.info(f"Available capital: ${self.available_capital:,.2f}")
@@ -290,7 +290,7 @@ class CaldeiraMouraTradingRule:
         if self.position != 0 and hasattr(self, 'entry_prices') and self.entry_prices is not None and isinstance(self.entry_prices, pd.Series) and len(self.entry_prices) >= 2:
             asset_names = self.entry_prices.index
             if len(asset_names) >= 2:
-                asset1, asset2 = asset_names[0], asset_names[1]
+                asset1, asset2 = asset_names.iloc[0], asset_names.iloc[1]
                 if self.position == 1:
                     position_type = f"LONG {asset1} / SHORT {asset2}"
                 else:
