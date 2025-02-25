@@ -2,19 +2,25 @@ from typing import Optional, Dict, Tuple, List
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass
+import logging
 from ..cointegration_approach.utils import calculate_zscore
+from ..utils.logging import get_logger
+
+# Get logger from the package
+logger = get_logger('persevera_arbitrage.trading.zscore')
 
 @dataclass
 class CaldeiraMouraConfig:
     """Configuration for Caldeira-Moura trading rule."""
     entry_threshold: float = 2.0
-    exit_threshold_short: float = 0.75    # Close short when z < 0.75
-    exit_threshold_long: float = -0.50    # Close long when z > -0.50
+    exit_threshold_short: float = 0.75   # Close short when z < 0.75
+    exit_threshold_long: float = -0.50   # Close long when z > -0.50
     stop_loss: float = 0.07              # 7% stop loss
     max_holding_days: int = 50
     portfolio_size: int = 20             # Number of pairs in portfolio (1/20 allocation each)
     initial_capital: float = 1_000_000   # Initial capital for position sizing
-    lookback_window: int = 252          # Window for z-score calculation (1 year)
+    lookback_window: int = 252           # Window for z-score calculation (1 year)
+    verbose: bool = True                 # Whether to print trading actions
 
 class CaldeiraMouraTradingRule:
     """
@@ -63,16 +69,21 @@ class CaldeiraMouraTradingRule:
         # Store historical spread if provided
         if historical_spread is not None:
             self.historical_spreads[pair_id] = historical_spread
+            if self.config.verbose:
+                logger.info(f"Stored historical spread data for pair {pair_id} with {len(historical_spread)} data points")
         
         # Calculate z-score using hybrid approach if historical data available
         if pair_id in self.historical_spreads:
+            if self.config.verbose:
+                logger.info(f"Using hybrid z-score calculation for pair {pair_id}")
             zscore = self.calculate_hybrid_zscore(
                 simulated_spread=simulated_spread,
                 historical_spread=self.historical_spreads[pair_id],
                 window=self.config.lookback_window
             )
         else:
-            # Fallback to standard z-score calculation if no historical data
+            if self.config.verbose:
+                logger.info(f"Using standard z-score calculation for pair {pair_id} (no historical data available)")
             zscore = calculate_zscore(simulated_spread, window=self.config.lookback_window)
         
         signals = pd.Series(0, index=zscore.index)
@@ -83,6 +94,8 @@ class CaldeiraMouraTradingRule:
             z = zscore.iloc[i]
             
             if pd.isna(z):
+                if self.config.verbose:
+                    logger.warning(f"{date}: Z-score is NaN for pair {pair_id}, skipping day")
                 continue
                 
             # Check existing position
@@ -97,15 +110,32 @@ class CaldeiraMouraTradingRule:
                 returns = (current_prices - entry_prices) / entry_prices
                 portfolio_return = self.positions[pair_id] * (returns.iloc[0] - returns.iloc[1])
                 
+                position_type = "LONG-SHORT" if self.positions[pair_id] == 1 else "SHORT-LONG"
+                holding_days = self.position_days[pair_id]
+                
+                if self.config.verbose:
+                    logger.info(f"{date}: Holding {position_type} position for pair {pair_id} (Day {holding_days}, Z-score: {z:.2f}, Return: {portfolio_return:.2%})")
+                
                 # Check closing conditions
-                should_close = (
-                    (self.positions[pair_id] == 1 and z > self.config.exit_threshold_long) or
-                    (self.positions[pair_id] == -1 and z < self.config.exit_threshold_short) or
-                    (abs(portfolio_return) > self.config.stop_loss) or
-                    (self.position_days[pair_id] >= self.config.max_holding_days)
-                )
+                should_close = False
+                close_reason = ""
+                
+                if self.positions[pair_id] == 1 and z > self.config.exit_threshold_long:
+                    should_close = True
+                    close_reason = f"Z-score ({z:.2f}) above exit threshold ({self.config.exit_threshold_long})"
+                elif self.positions[pair_id] == -1 and z < self.config.exit_threshold_short:
+                    should_close = True
+                    close_reason = f"Z-score ({z:.2f}) below exit threshold ({self.config.exit_threshold_short})"
+                elif abs(portfolio_return) > self.config.stop_loss:
+                    should_close = True
+                    close_reason = f"Stop loss triggered ({portfolio_return:.2%})"
+                elif self.position_days[pair_id] >= self.config.max_holding_days:
+                    should_close = True
+                    close_reason = f"Maximum holding period reached ({self.position_days[pair_id]} days)"
                 
                 if should_close:
+                    if self.config.verbose:
+                        logger.info(f"{date}: CLOSING {position_type} position for pair {pair_id}. Reason: {close_reason}")
                     signals.iloc[i] = 0
                     sizes.iloc[i] = 0
                     self._close_position(pair_id)
@@ -118,10 +148,22 @@ class CaldeiraMouraTradingRule:
                 if len(self.positions) < self.config.portfolio_size:
                     signal = -1 if z > 0 else 1
                     position_size = self._calculate_position_size()
+                    
+                    position_type = "LONG-SHORT" if signal == 1 else "SHORT-LONG"
+                    
                     if position_size > 0:
+                        if self.config.verbose:
+                            logger.info(f"{date}: OPENING {position_type} position for pair {pair_id}. Z-score: {z:.2f}, Size: ${position_size:,.2f}")
                         signals.iloc[i] = signal
                         sizes.iloc[i] = position_size
                         self._open_position(pair_id, signal, prices.iloc[i], position_size)
+                    else:
+                        if self.config.verbose:
+                            logger.warning(f"{date}: Skipping {position_type} signal for pair {pair_id}. Insufficient capital.")
+                elif self.config.verbose:
+                    logger.info(f"{date}: Skipping entry signal for pair {pair_id}. Portfolio already at maximum size ({self.config.portfolio_size}).")
+            elif self.config.verbose and i % 20 == 0:  # Log every 20 days when no action is taken to reduce verbosity
+                logger.info(f"{date}: No trading action for pair {pair_id}. Z-score: {z:.2f}")
         
         return signals, sizes
     
@@ -167,11 +209,27 @@ class CaldeiraMouraTradingRule:
         self.entry_prices[pair_id] = prices.copy()
         self.position_sizes[pair_id] = size
         self.available_capital -= size
+        
+        if self.config.verbose:
+            position_type = "LONG-SHORT" if signal == 1 else "SHORT-LONG"
+            logger.info(f"Position opened: {position_type} for pair {pair_id}")
+            logger.info(f"Entry prices: {prices.to_dict()}")
+            logger.info(f"Position size: ${size:,.2f}")
+            logger.info(f"Available capital: ${self.available_capital:,.2f}")
     
     def _close_position(self, pair_id: str) -> None:
         """Close position for a pair."""
+        position_size = self.position_sizes[pair_id]
+        position_type = "LONG-SHORT" if self.positions[pair_id] == 1 else "SHORT-LONG"
+        holding_days = self.position_days[pair_id]
+        
         # Return capital to available pool
-        self.available_capital += self.position_sizes[pair_id]
+        self.available_capital += position_size
+        
+        if self.config.verbose:
+            logger.info(f"Position closed: {position_type} for pair {pair_id}")
+            logger.info(f"Holding period: {holding_days} days")
+            logger.info(f"Capital returned: ${position_size:,.2f}")
         
         # Clear position tracking
         del self.positions[pair_id]
@@ -184,22 +242,37 @@ class CaldeiraMouraTradingRule:
             additional_per_position = self.available_capital / len(self.positions)
             for pid in self.positions:
                 self.position_sizes[pid] += additional_per_position
+                if self.config.verbose:
+                    logger.info(f"Redistributed ${additional_per_position:,.2f} to position {pid}")
             self.available_capital = 0
+            if self.config.verbose:
+                logger.info(f"All available capital redistributed to remaining {len(self.positions)} positions")
     
     def get_portfolio_stats(self) -> Dict[str, float]:
         """Get current portfolio statistics."""
-        return {
+        stats = {
             'n_positions': len(self.positions),
             'available_capital': self.available_capital,
             'allocated_capital': sum(self.position_sizes.values()),
             'total_capital': self.available_capital + sum(self.position_sizes.values())
         }
+        
+        if self.config.verbose:
+            logger.info(f"Portfolio stats: {stats}")
+        
+        return stats
     
     def reset(self) -> None:
         """Reset trading rule state."""
+        if self.config.verbose:
+            logger.info("Resetting trading rule state")
+        
         self.positions.clear()
         self.position_days.clear()
         self.entry_prices.clear()
         self.position_sizes.clear()
         self.historical_spreads.clear()
         self.available_capital = self.config.initial_capital
+        
+        if self.config.verbose:
+            logger.info(f"Trading rule reset. Available capital: ${self.available_capital:,.2f}")
