@@ -96,6 +96,9 @@ class CaldeiraMouraTradingRule:
         self.max_drawdown: float = 0.0
         self.peak_capital: float = self.config.initial_capital
         
+        # Daily equity tracking
+        self.equity_curve = {}  # Dictionary to store daily equity values
+        
     def generate_signals(self,
                          simulated_spread: pd.Series,
                          historical_spread: Optional[pd.Series],
@@ -137,14 +140,38 @@ class CaldeiraMouraTradingRule:
         else:
             if self.config.verbose:
                 logger.info(f"Using standard z-score calculation for {pair_name} (no historical data available)")
-            zscore = calculate_zscore(simulated_spread, window=self.config.lookback_window)
+            zscore = calculate_zscore(simulated_spread, lookback=self.config.lookback_window)
         
         signals = pd.Series(0, index=zscore.index)
         sizes = pd.Series(0.0, index=zscore.index)
         
+        # Initialize equity tracking if not already done
+        if not self.equity_curve:
+            # Start with initial capital
+            for date in zscore.index:
+                self.equity_curve[date] = self.config.initial_capital
+        
         for i in range(len(zscore)):
             date = zscore.index[i]
             z = zscore.iloc[i]
+            
+            # Track current equity (available capital + position value if any)
+            current_equity = self.available_capital
+            if self.position != 0 and self.entry_prices is not None:
+                current_prices = prices.iloc[i]
+                _, _, _, pnl_amount = self._calculate_portfolio_return(current_prices)
+                current_equity = self.available_capital + self.position_size + pnl_amount
+            
+            # Update equity curve
+            self.equity_curve[date] = current_equity
+            
+            # Update peak capital and drawdown
+            if current_equity > self.peak_capital:
+                self.peak_capital = current_equity
+            else:
+                drawdown = (self.peak_capital - current_equity) / self.peak_capital
+                if drawdown > self.max_drawdown:
+                    self.max_drawdown = drawdown
             
             if pd.isna(z):
                 if self.config.verbose:
@@ -349,8 +376,37 @@ class CaldeiraMouraTradingRule:
         self.entry_prices = None
         self.position_size = 0.0
     
+    def get_equity_curve(self) -> pd.DataFrame:
+        """
+        Get the equity curve of the strategy.
+        
+        Returns:
+            DataFrame with daily equity values and related metrics
+        """
+        if not self.equity_curve:
+            return pd.DataFrame()
+        
+        # Convert dictionary to DataFrame
+        dates = sorted(self.equity_curve.keys())
+        equity_values = [self.equity_curve[date] for date in dates]
+        
+        equity_df = pd.DataFrame({
+            'equity': equity_values
+        }, index=dates)
+        
+        # Calculate returns
+        equity_df['return'] = equity_df['equity'].pct_change()
+        equity_df['cumulative_return'] = equity_df['equity'] / self.config.initial_capital - 1
+        
+        # Calculate drawdown
+        equity_df['peak_equity'] = equity_df['equity'].cummax()
+        equity_df['drawdown'] = (equity_df['peak_equity'] - equity_df['equity']) / equity_df['peak_equity']
+        
+        return equity_df
+    
     def get_portfolio_stats(self) -> Dict[str, float]:
         """Get current portfolio statistics."""
+        # Calculate current capital
         allocated_capital = self.position_size if self.position != 0 else 0.0
         total_capital = self.available_capital + allocated_capital
         
@@ -358,65 +414,63 @@ class CaldeiraMouraTradingRule:
         cumulative_pnl = total_capital - self.config.initial_capital
         cumulative_return = cumulative_pnl / self.config.initial_capital
         
-        # Get position type with asset names if available
+        # Get position type
         position_type = "NONE"
-        if self.position != 0 and hasattr(self, 'entry_prices') and self.entry_prices is not None and isinstance(self.entry_prices, pd.Series) and len(self.entry_prices) >= 2:
-            asset_names = self.entry_prices.index
-            if len(asset_names) >= 2:
-                asset1, asset2 = asset_names.iloc[0], asset_names.iloc[1]
-                if self.position == 1:
-                    position_type = f"LONG {asset1} / SHORT {asset2}"
-                else:
-                    position_type = f"SHORT {asset1} / LONG {asset2}"
+        if self.position != 0 and self.current_trade is not None:
+            asset1 = self.current_trade.asset1
+            asset2 = self.current_trade.asset2
+            if self.position == 1:
+                position_type = f"LONG {asset1} / SHORT {asset2}"
             else:
-                position_type = "LONG-SHORT" if self.position == 1 else "SHORT-LONG"
+                position_type = f"SHORT {asset1} / LONG {asset2}"
         elif self.position != 0:
             position_type = "LONG-SHORT" if self.position == 1 else "SHORT-LONG"
         
-        # Calculate trade statistics
+        # Calculate basic trade statistics
         num_trades = len(self.trades)
         winning_trades = sum(1 for trade in self.trades if trade.pnl_amount > 0)
-        losing_trades = sum(1 for trade in self.trades if trade.pnl_amount <= 0)
         win_rate = winning_trades / num_trades if num_trades > 0 else 0.0
         
-        avg_return = np.mean([trade.portfolio_return for trade in self.trades]) if self.trades else 0.0
-        avg_win = np.mean([trade.portfolio_return for trade in self.trades if trade.pnl_amount > 0]) if winning_trades > 0 else 0.0
-        avg_loss = np.mean([trade.portfolio_return for trade in self.trades if trade.pnl_amount <= 0]) if losing_trades > 0 else 0.0
-        
-        avg_holding_days = np.mean([trade.holding_days for trade in self.trades]) if self.trades else 0.0
-        
-        # Calculate annualized metrics if we have trades
+        # Calculate annualized metrics
         annualized_return = 0.0
         annualized_volatility = 0.0
         sharpe_ratio = 0.0
         calmar_ratio = 0.0
         
-        if self.trades:
-            # Calculate annualized metrics from trade history
-            annualized_return, annualized_volatility, sharpe_ratio = self._calculate_annualized_metrics()
+        # Get equity curve for calculations
+        equity_df = self.get_equity_curve()
+        
+        if not equity_df.empty and len(equity_df) > 1:
+            # Calculate trading days
+            total_days = (equity_df.index[-1] - equity_df.index[0]).days
+            trading_days = len(equity_df)
             
-            # Calculate Calmar ratio (annualized return / max drawdown)
-            if self.max_drawdown < 0:
+            # Annualized return
+            total_return = equity_df['equity'].iloc[-1] / self.config.initial_capital - 1
+            annualized_return = (1 + total_return) ** (252 / max(trading_days, 1)) - 1
+            
+            # Annualized volatility
+            daily_returns = equity_df['return'].dropna()
+            if len(daily_returns) > 0:
+                annualized_volatility = daily_returns.std() * np.sqrt(252)
+                
+                # Sharpe ratio (assuming 0% risk-free rate for simplicity)
+                sharpe_ratio = annualized_return / annualized_volatility if annualized_volatility > 0 else 0.0
+            
+            # Calmar ratio
+            if self.max_drawdown > 0:
                 calmar_ratio = annualized_return / self.max_drawdown
         
+        # Create simplified stats dictionary
         stats = {
             'has_position': self.position != 0,
             'position_type': position_type,
-            'position_days': self.position_days if self.position != 0 else 0,
-            'available_capital': self.available_capital,
-            'allocated_capital': allocated_capital,
             'total_capital': total_capital,
             'cumulative_pnl': cumulative_pnl,
             'cumulative_return': cumulative_return,
             'max_drawdown': self.max_drawdown,
             'num_trades': num_trades,
-            'winning_trades': winning_trades,
-            'losing_trades': losing_trades,
             'win_rate': win_rate,
-            'avg_return': avg_return,
-            'avg_win': avg_win,
-            'avg_loss': avg_loss,
-            'avg_holding_days': avg_holding_days,
             'annualized_return': annualized_return,
             'annualized_volatility': annualized_volatility,
             'sharpe_ratio': sharpe_ratio,
@@ -427,176 +481,12 @@ class CaldeiraMouraTradingRule:
             logger.info(f"Portfolio stats: {stats}")
             logger.info(f"Cumulative P&L: {cumulative_pnl:,.2f} ({cumulative_return:.2%})")
             if num_trades > 0:
-                logger.info(f"Trade stats: {num_trades} trades, {win_rate:.1%} win rate, {avg_holding_days:.1f} avg days")
-                logger.info(f"Returns: {avg_return:.2%} avg, {avg_win:.2%} avg win, {avg_loss:.2%} avg loss")
+                logger.info(f"Trade stats: {num_trades} trades, {win_rate:.1%} win rate")
                 logger.info(f"Annualized: {annualized_return:.2%} return, {annualized_volatility:.2%} volatility")
                 logger.info(f"Risk metrics: Sharpe {sharpe_ratio:.2f}, Calmar {calmar_ratio:.2f}")
                 logger.info(f"Max drawdown: {self.max_drawdown:.2%}")
         
         return stats
-    
-    def _calculate_annualized_metrics(self, risk_free_rate: float = 0.02) -> Tuple[float, float, float]:
-        """
-        Calculate annualized return, volatility, and Sharpe ratio from trade history.
-        
-        Args:
-            risk_free_rate: Annual risk-free rate (default: 2%)
-            
-        Returns:
-            Tuple containing:
-            - annualized_return: Annualized return
-            - annualized_volatility: Annualized volatility
-            - sharpe_ratio: Sharpe ratio
-        """
-        if not self.trades:
-            return 0.0, 0.0, 0.0
-            
-        # Create a DataFrame with trade returns and dates
-        trade_data = []
-        for trade in self.trades:
-            if trade.exit_date and trade.entry_date:
-                trade_data.append({
-                    'entry_date': trade.entry_date,
-                    'exit_date': trade.exit_date,
-                    'return': trade.portfolio_return,
-                    'holding_days': trade.holding_days
-                })
-        
-        if not trade_data:
-            return 0.0, 0.0, 0.0
-            
-        df = pd.DataFrame(trade_data)
-        
-        # Sort by exit date to get chronological order
-        df = df.sort_values('exit_date')
-        
-        # Calculate total trading days
-        if len(df) > 1:
-            first_date = df['entry_date'].min()
-            last_date = df['exit_date'].max()
-            total_days = (last_date - first_date).days
-            if total_days <= 0:
-                total_days = sum(df['holding_days'])
-        else:
-            total_days = sum(df['holding_days'])
-        
-        # Ensure we have at least one day to avoid division by zero
-        total_days = max(1, total_days)
-        
-        # Calculate annualized metrics
-        # Compound the returns to get total return
-        total_return = np.prod(1 + df['return']) - 1
-        
-        # Annualize the return (assuming 252 trading days per year)
-        annualized_return = (1 + total_return) ** (252 / total_days) - 1
-        
-        # Calculate volatility of returns
-        if len(df) > 1:
-            # Standard deviation of returns
-            return_volatility = np.std(df['return'])
-            
-            # Annualize volatility
-            annualized_volatility = return_volatility * np.sqrt(252 / (total_days / len(df)))
-        else:
-            # If only one trade, use the absolute return as volatility
-            return_volatility = abs(df['return'].iloc[0])
-            annualized_volatility = return_volatility * np.sqrt(252 / total_days)
-        
-        # Calculate Sharpe ratio
-        daily_risk_free = (1 + risk_free_rate) ** (1/252) - 1
-        excess_return = annualized_return - risk_free_rate
-        sharpe_ratio = excess_return / annualized_volatility if annualized_volatility > 0 else 0.0
-        
-        return annualized_return, annualized_volatility, sharpe_ratio
-    
-    def get_trade_history(self) -> pd.DataFrame:
-        """Get trade history as a DataFrame."""
-        if not self.trades:
-            return pd.DataFrame()
-        
-        trade_dicts = [trade.to_dict() for trade in self.trades]
-        return pd.DataFrame(trade_dicts)
-    
-    def get_equity_curve(self) -> pd.DataFrame:
-        """
-        Calculate and return the equity curve of the strategy.
-        
-        Returns:
-            DataFrame with daily equity values and related metrics
-        """
-        if not self.trades:
-            return pd.DataFrame()
-        
-        # Get trade history
-        trades_df = self.get_trade_history()
-        
-        if trades_df.empty:
-            return pd.DataFrame()
-        
-        # Convert date strings to datetime
-        trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date'])
-        trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date'])
-        
-        # Sort by exit date
-        trades_df = trades_df.sort_values('exit_date')
-        
-        # Get the full date range from first entry to last exit
-        start_date = trades_df['entry_date'].min()
-        end_date = trades_df['exit_date'].max()
-        
-        # Create a DataFrame with all dates in the range
-        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-        equity_curve = pd.DataFrame(index=date_range)
-        equity_curve.index.name = 'date'
-        
-        # Initialize with initial capital
-        equity_curve['equity'] = self.config.initial_capital
-        equity_curve['trade_active'] = False
-        equity_curve['trade_entry'] = False
-        equity_curve['trade_exit'] = False
-        equity_curve['return'] = 0.0
-        equity_curve['drawdown'] = 0.0
-        
-        # Track current equity
-        current_equity = self.config.initial_capital
-        peak_equity = current_equity
-        
-        # Process each trade
-        for _, trade in trades_df.iterrows():
-            entry_date = trade['entry_date']
-            exit_date = trade['exit_date']
-            pnl = trade['pnl_amount']
-            
-            # Mark trade entry
-            if entry_date in equity_curve.index:
-                equity_curve.loc[entry_date, 'trade_entry'] = True
-            
-            # Mark active trade period
-            trade_period = equity_curve.index[(equity_curve.index >= entry_date) & (equity_curve.index <= exit_date)]
-            equity_curve.loc[trade_period, 'trade_active'] = True
-            
-            # Mark trade exit and update equity
-            if exit_date in equity_curve.index:
-                equity_curve.loc[exit_date, 'trade_exit'] = True
-                current_equity += pnl
-                
-                # Update equity for all days after this exit
-                future_days = equity_curve.index[equity_curve.index >= exit_date]
-                equity_curve.loc[future_days, 'equity'] = current_equity
-                
-                # Update peak equity if needed
-                if current_equity > peak_equity:
-                    peak_equity = current_equity
-        
-        # Calculate returns and drawdowns
-        equity_curve['return'] = equity_curve['equity'].pct_change()
-        equity_curve['cumulative_return'] = equity_curve['equity'] / self.config.initial_capital - 1
-        
-        # Calculate drawdown
-        equity_curve['peak_equity'] = equity_curve['equity'].cummax()
-        equity_curve['drawdown'] = (equity_curve['peak_equity'] - equity_curve['equity']) / equity_curve['peak_equity']
-        
-        return equity_curve
     
     def reset(self) -> None:
         """Reset trading rule state."""
@@ -622,6 +512,9 @@ class CaldeiraMouraTradingRule:
         self.current_trade = None
         self.max_drawdown = 0.0
         self.peak_capital = self.config.initial_capital
+        
+        # Reset daily equity tracking
+        self.equity_curve = {}
         
         if self.config.verbose:
             logger.info(f"Trading rule reset. Available capital: {self.available_capital:,.2f}")
@@ -656,3 +549,11 @@ class CaldeiraMouraTradingRule:
         pnl_amount = current_trade_return * self.position_size
         
         return current_trade_return, leg1_return, leg2_return, pnl_amount
+
+    def get_trade_history(self) -> pd.DataFrame:
+        """Get trade history as a DataFrame."""
+        if not self.trades:
+            return pd.DataFrame()
+        
+        trade_dicts = [trade.to_dict() for trade in self.trades]
+        return pd.DataFrame(trade_dicts)
