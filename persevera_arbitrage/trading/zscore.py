@@ -15,7 +15,7 @@ class CaldeiraMouraConfig:
     entry_threshold: float = 2.0
     exit_threshold_short: float = 0.75   # Close short when z < 0.75
     exit_threshold_long: float = -0.50   # Close long when z > -0.50
-    stop_loss: float = 0.07              # 7% stop loss
+    stop_loss: float = -0.07              # 7% stop loss
     max_holding_days: int = 50
     initial_capital: float = 1_000_000   # Initial capital for position sizing
     lookback_window: int = 252           # Window for z-score calculation (1 year)
@@ -128,7 +128,7 @@ class CaldeiraMouraTradingRule:
                 elif self.position == -1 and z < self.config.exit_threshold_short:
                     should_close = True
                     close_reason = f"Z-score ({z:.2f}) below exit threshold ({self.config.exit_threshold_short})"
-                elif abs(portfolio_return) > self.config.stop_loss:
+                elif portfolio_return <= self.config.stop_loss:
                     should_close = True
                     close_reason = f"Stop loss triggered ({portfolio_return:.2%})"
                 elif self.position_days >= self.config.max_holding_days:
