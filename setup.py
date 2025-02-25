@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="persevera_arbitrage",
-    version="0.4.6",
+    version="0.5.0",
     packages=find_packages(),
     install_requires=[
         "pandas",

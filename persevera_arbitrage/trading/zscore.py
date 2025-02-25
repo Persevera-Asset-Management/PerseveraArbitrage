@@ -38,16 +38,19 @@ class CaldeiraMouraTradingRule:
         self.entry_prices: Dict[str, pd.Series] = {}   # {pair_id: prices}
         self.position_sizes: Dict[str, float] = {}     # {pair_id: capital_allocated}
         self.available_capital = self.config.initial_capital
+        self.historical_spreads: Dict[str, pd.Series] = {}  # Store historical spreads for hybrid z-score calculation
         
     def generate_signals(self,
-                        spread: pd.Series,
-                        prices: pd.DataFrame,
-                        pair_id: str,
-                        beta: float) -> Tuple[pd.Series, pd.Series]:
+                         simulated_spread: pd.Series,
+                         historical_spread: Optional[pd.Series],
+                         prices: pd.DataFrame,
+                         pair_id: str,
+                         beta: float) -> Tuple[pd.Series, pd.Series]:
         """Generate trading signals and position sizes for a pair.
         
         Args:
-            spread: Spread series for the pair
+            simulated_spread: Spread series for the pair
+            historical_spread: Optional historical spread data for hybrid z-score calculation
             prices: Price data for the pair (long and short candidates)
             pair_id: Unique identifier for the pair
             beta: Hedge ratio for the pair
@@ -57,8 +60,20 @@ class CaldeiraMouraTradingRule:
             - Series with trading signals (1: long-short, -1: short-long, 0: no position)
             - Series with position sizes
         """
-        # Calculate z-score using utility function
-        zscore = calculate_zscore(spread, lookback=self.config.lookback_window)
+        # Store historical spread if provided
+        if historical_spread is not None:
+            self.historical_spreads[pair_id] = historical_spread
+        
+        # Calculate z-score using hybrid approach if historical data available
+        if pair_id in self.historical_spreads:
+            zscore = self.calculate_hybrid_zscore(
+                simulated_spread=simulated_spread,
+                historical_spread=self.historical_spreads[pair_id],
+                window=self.config.lookback_window
+            )
+        else:
+            # Fallback to standard z-score calculation if no historical data
+            zscore = calculate_zscore(simulated_spread, window=self.config.lookback_window)
         
         signals = pd.Series(0, index=zscore.index)
         sizes = pd.Series(0.0, index=zscore.index)
@@ -110,6 +125,32 @@ class CaldeiraMouraTradingRule:
         
         return signals, sizes
     
+    def calculate_hybrid_zscore(self, simulated_spread: pd.Series, historical_spread: pd.Series, window: int = 252) -> pd.Series:
+        """
+        Calculate z-scores using a hybrid approach for realistic simulations
+        
+        Args:
+            simulated_spread: Pandas Series of simulated spread values
+            historical_spread: Pandas Series of historical spread values
+            window: Lookback window size
+        
+        Returns:
+            Pandas Series of z-scores
+        """
+        # Combine historical and simulated spreads
+        combined_spread = pd.concat([historical_spread, simulated_spread])
+        combined_spread = combined_spread[~combined_spread.index.duplicated(keep='first')].sort_index()
+        
+        # Calculate rolling statistics
+        rolling_mean = combined_spread.rolling(window=window, min_periods=window).mean()
+        rolling_std = combined_spread.rolling(window=window, min_periods=window).std()
+        
+        # Calculate z-scores
+        zscore = (combined_spread - rolling_mean) / rolling_std
+        
+        # Filter to just simulated period
+        return zscore.loc[simulated_spread.index]
+
     def _calculate_position_size(self) -> float:
         """Calculate position size for new pair entry."""
         n_current = len(self.positions)
@@ -160,4 +201,5 @@ class CaldeiraMouraTradingRule:
         self.position_days.clear()
         self.entry_prices.clear()
         self.position_sizes.clear()
+        self.historical_spreads.clear()
         self.available_capital = self.config.initial_capital
