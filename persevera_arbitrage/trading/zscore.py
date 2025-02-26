@@ -58,13 +58,14 @@ class Trade:
 class CaldeiraMouraConfig:
     """Configuration for Caldeira-Moura trading rule."""
     entry_threshold: float = 2.0
-    exit_threshold_short: float = 0.75   # Close short when z < 0.75
-    exit_threshold_long: float = -0.50   # Close long when z > -0.50
-    stop_loss: float = 0.07              # 7% stop loss (positive value for easier understanding)
+    exit_threshold_short: float = 0.75  # Close short when z < 0.75
+    exit_threshold_long: float = -0.50  # Close long when z > -0.50
+    stop_loss: float = 0.07             # 7% stop loss (positive value for easier understanding)
     max_holding_days: int = 50
-    initial_capital: float = 1_000_000   # Initial capital for position sizing
-    lookback_window: int = 252           # Window for z-score calculation (1 year)
-    verbose: bool = True                 # Whether to print trading actions
+    initial_capital: float = 1_000_000  # Initial capital for position sizing
+    lookback_window: int = 252          # Window for z-score calculation (1 year)
+    verbose: bool = True                # Whether to print trading actions
+    risk_free_rate: float = 0.10        # Annual risk-free rate (10%)
 
 class CaldeiraMouraTradingRule:
     """
@@ -454,8 +455,9 @@ class CaldeiraMouraTradingRule:
             if len(daily_returns) > 0:
                 annualized_volatility = daily_returns.std() * np.sqrt(252)
                 
-                # Sharpe ratio (assuming 0% risk-free rate for simplicity)
-                sharpe_ratio = annualized_return / annualized_volatility if annualized_volatility > 0 else 0.0
+                # Sharpe ratio (using risk-free rate)
+                risk_free_rate = self.config.risk_free_rate
+                sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility if annualized_volatility > 0 else 0.0
             
             # Calmar ratio
             if self.max_drawdown > 0:
