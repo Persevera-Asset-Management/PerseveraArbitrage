@@ -160,13 +160,40 @@ class CaldeiraMouraTradingRule:
             
             # Track current equity (available capital + position value if any)
             current_equity = self.available_capital
+            current_prices = prices.iloc[i]
+            
+            # Initialize detailed tracking dictionary if this is the first entry
+            if date not in self.equity_curve:
+                self.equity_curve[date] = {
+                    'equity': self.config.initial_capital,
+                    'available_capital': self.available_capital,
+                    'position_size': 0.0,
+                    'pnl_amount': 0.0,
+                    'position': 0,
+                    'zscore': z,
+                    'asset1_price': current_prices.iloc[0],
+                    'asset2_price': current_prices.iloc[1],
+                    'holding_days': 0
+                }
+            
+            # Calculate position value if we have an open position
+            pnl_amount = 0.0
             if self.position != 0 and self.entry_prices is not None:
-                current_prices = prices.iloc[i]
                 _, _, _, pnl_amount = self._calculate_portfolio_return(current_prices)
                 current_equity = self.available_capital + self.position_size + pnl_amount
             
-            # Update equity curve
-            self.equity_curve[date] = current_equity
+            # Update equity curve with detailed information
+            self.equity_curve[date] = {
+                'equity': current_equity,
+                'available_capital': self.available_capital,
+                'position_size': self.position_size if self.position != 0 else 0.0,
+                'pnl_amount': pnl_amount,
+                'position': self.position,
+                'zscore': z,
+                'asset1_price': current_prices.iloc[0],
+                'asset2_price': current_prices.iloc[1],
+                'holding_days': self.position_days if self.position != 0 else 0
+            }
             
             # Update peak capital and drawdown
             if current_equity > self.peak_capital:
@@ -184,7 +211,6 @@ class CaldeiraMouraTradingRule:
             # Check existing position
             if self.position != 0:
                 self.position_days += 1
-                current_prices = prices.iloc[i]
                 
                 # Calculate returns based on equal dollar allocation
                 current_trade_return, leg1_return, leg2_return, pnl_amount = self._calculate_portfolio_return(current_prices)
@@ -396,7 +422,7 @@ class CaldeiraMouraTradingRule:
     
     def get_equity_curve(self) -> pd.DataFrame:
         """
-        Get the equity curve of the strategy.
+        Get the equity curve of the strategy with detailed information.
         
         Returns:
             DataFrame with daily equity values and related metrics
@@ -406,11 +432,9 @@ class CaldeiraMouraTradingRule:
         
         # Convert dictionary to DataFrame
         dates = sorted(self.equity_curve.keys())
-        equity_values = [self.equity_curve[date] for date in dates]
         
-        equity_df = pd.DataFrame({
-            'equity': equity_values
-        }, index=dates)
+        # Create DataFrame from the detailed dictionaries
+        equity_df = pd.DataFrame([self.equity_curve[date] for date in dates], index=dates)
         
         # Calculate returns
         equity_df['return'] = equity_df['equity'].pct_change()
