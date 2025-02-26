@@ -194,6 +194,7 @@ class CaldeiraMouraTradingRule:
                 'asset2_price': current_prices.iloc[1],
                 'holding_days': self.position_days if self.position != 0 else 0
             }
+            print(self.equity_curve[date])
             
             # Update peak capital and drawdown
             if current_equity > self.peak_capital:
@@ -266,7 +267,8 @@ class CaldeiraMouraTradingRule:
                 signals.iloc[i] = signal
                 sizes.iloc[i] = position_size
                 self._open_position(signal, prices.iloc[i], position_size, asset1, asset2, date, z)
-            elif self.config.verbose and i % 20 == 0:  # Log every 20 days when no action is taken to reduce verbosity
+            # elif self.config.verbose and i % 20 == 0:  # Log every 20 days when no action is taken to reduce verbosity
+            elif self.config.verbose:  # Log every 20 days when no action is taken to reduce verbosity
                 logger.info(f"{date}: No trading action for {pair_name}. Z-score: {z:.2f}")
         
         return signals, sizes
@@ -311,7 +313,9 @@ class CaldeiraMouraTradingRule:
         self.position_days = 0
         self.entry_prices = prices.copy()
         self.position_size = size_after_costs  # Use size after accounting for transaction costs
-        self.available_capital -= total_transaction_costs  # Deduct total transaction costs from available capital
+        
+        # Deduct the full position size from available capital
+        self.available_capital -= size  # This deducts both transaction costs and the position size
         
         # Calculate the dollar amount allocated to each leg
         leg_allocation = size_after_costs / 2  # Equal dollar allocation to each leg
@@ -502,7 +506,7 @@ class CaldeiraMouraTradingRule:
             
             # Calmar ratio
             if self.max_drawdown > 0:
-                calmar_ratio = annualized_return / self.max_drawdown
+                calmar_ratio = total_return / self.max_drawdown
         
         # Create simplified stats dictionary
         stats = {
