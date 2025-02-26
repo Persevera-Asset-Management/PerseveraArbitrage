@@ -58,14 +58,16 @@ class Trade:
 class CaldeiraMouraConfig:
     """Configuration for Caldeira-Moura trading rule."""
     entry_threshold: float = 2.0
-    exit_threshold_short: float = 0.75  # Close short when z < 0.75
-    exit_threshold_long: float = -0.50  # Close long when z > -0.50
-    stop_loss: float = 0.07             # 7% stop loss (positive value for easier understanding)
+    exit_threshold_short: float = 0.75          # Close short when z < 0.75
+    exit_threshold_long: float = -0.50          # Close long when z > -0.50
+    stop_loss: float = 0.07                     # 7% stop loss (positive value for easier understanding)
     max_holding_days: int = 50
-    initial_capital: float = 1_000_000  # Initial capital for position sizing
-    lookback_window: int = 252          # Window for z-score calculation (1 year)
-    verbose: bool = True                # Whether to print trading actions
-    risk_free_rate: float = 0.10        # Annual risk-free rate (10%)
+    initial_capital: float = 1_000_000          # Initial capital for position sizing
+    lookback_window: int = 252                  # Window for z-score calculation (1 year)
+    verbose: bool = True                        # Whether to print trading actions
+    risk_free_rate: float = 0.10                # Annual risk-free rate (10%)
+    long_transaction_cost: float = 0.003        # 0.2% (brokerage) + 0.1% (slippage) = 0.3%
+    short_transaction_cost: float = 0.005       # 0.2% (brokerage) + 0.1% (slippage) + 0.2% (rental) = 0.5%.
 
 class CaldeiraMouraTradingRule:
     """
@@ -84,10 +86,10 @@ class CaldeiraMouraTradingRule:
     def __init__(self, config: Optional[CaldeiraMouraConfig] = None):
         """Initialize trading rule."""
         self.config = config or CaldeiraMouraConfig()
-        self.position: int = 0                        # Direction: 1 (long-short) or -1 (short-long) or 0 (no position)
-        self.position_days: int = 0                   # Holding period for current position
-        self.entry_prices: Optional[pd.Series] = None # Entry prices for current position
-        self.position_size: float = 0.0               # Capital allocated to current position
+        self.position: int = 0                              # Direction: 1 (long-short) or -1 (short-long) or 0 (no position)
+        self.position_days: int = 0                         # Holding period for current position
+        self.entry_prices: Optional[pd.Series] = None       # Entry prices for current position
+        self.position_size: float = 0.0                     # Capital allocated to current position
         self.available_capital = self.config.initial_capital
         self.historical_spread: Optional[pd.Series] = None  # Historical spread data for hybrid z-score calculation
         
@@ -272,14 +274,21 @@ class CaldeiraMouraTradingRule:
     def _open_position(self, signal: int, prices: pd.Series, size: float, asset1: str, asset2: str, 
                        date: datetime = None, zscore: float = None) -> None:
         """Open new position."""
+        # Calculate transaction costs for both legs
+        long_transaction_costs = (size / 2) * self.config.long_transaction_cost  # For asset1
+        short_transaction_costs = (size / 2) * self.config.short_transaction_cost  # For asset2
+        
+        total_transaction_costs = long_transaction_costs + short_transaction_costs
+        size_after_costs = size - total_transaction_costs
+        
         self.position = signal
         self.position_days = 0
         self.entry_prices = prices.copy()
-        self.position_size = size
-        self.available_capital = 0  # All capital is now allocated
+        self.position_size = size_after_costs  # Use size after accounting for transaction costs
+        self.available_capital -= total_transaction_costs  # Deduct total transaction costs from available capital
         
         # Calculate the dollar amount allocated to each leg
-        leg_allocation = size / 2  # Equal dollar allocation to each leg
+        leg_allocation = size_after_costs / 2  # Equal dollar allocation to each leg
         
         # Create a new trade record
         position_type = f"LONG {asset1} / SHORT {asset2}" if signal == 1 else f"SHORT {asset1} / LONG {asset2}"
@@ -290,14 +299,14 @@ class CaldeiraMouraTradingRule:
             asset1=asset1,
             asset2=asset2,
             entry_prices=prices.copy(),
-            position_size=size,
+            position_size=size_after_costs,
             entry_zscore=zscore if zscore is not None else 0.0
         )
         
         if self.config.verbose:
             logger.info(f"Position opened: {position_type}")
             logger.info(f"Entry prices: {asset1}={prices.iloc[0]:,.2f}, {asset2}={prices.iloc[1]:,.2f}")
-            logger.info(f"Position size: {size:,.2f} ({leg_allocation:,.2f} per leg)")
+            logger.info(f"Position size: {size_after_costs:,.2f} ({leg_allocation:,.2f} per leg)")
             logger.info(f"Available capital: {self.available_capital:,.2f}")
     
     def _close_position(self, asset1: str = None, asset2: str = None, current_prices: pd.Series = None,
@@ -320,7 +329,15 @@ class CaldeiraMouraTradingRule:
         if self.entry_prices is not None and current_prices is not None:
             # Calculate returns based on equal dollar allocation to each leg
             current_trade_return, leg1_return, leg2_return, pnl_amount = self._calculate_portfolio_return(current_prices)
-                
+            
+            # Calculate transaction costs for both legs
+            long_transaction_costs = (position_size / 2) * self.config.long_transaction_cost  # For asset1
+            short_transaction_costs = (position_size / 2) * self.config.short_transaction_cost  # For asset2
+            
+            total_transaction_costs = long_transaction_costs + short_transaction_costs
+            
+            pnl_amount -= total_transaction_costs  # Deduct total transaction costs from P&L
+            
             # Add detailed leg returns to the P&L info
             if self.position == 1:
                 leg_info = f" [LONG {asset1}: {leg1_return:.2%}, SHORT {asset2}: {leg2_return:.2%}]"
