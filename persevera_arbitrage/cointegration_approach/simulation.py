@@ -163,5 +163,3 @@ class CointegrationSimulation:
             'spread_std': np.std(self.spread_shocks),
             'half_life': -np.log(2) / np.log(abs(self.phi_spread))
         }
-
-# ZSCORE BOOTSTRAPED SAMPLE WITH MEAN AND STD FROM HISTORICAL RESIDUAL

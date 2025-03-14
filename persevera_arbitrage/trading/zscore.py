@@ -105,15 +105,13 @@ class CaldeiraMouraTradingRule:
     def generate_signals(self,
                          simulated_spread: pd.Series,
                          historical_spread: Optional[pd.Series],
-                         prices: pd.DataFrame,
-                         beta: float) -> Tuple[pd.Series, pd.Series]:
+                         prices: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
         """Generate trading signals and position sizes for a pair.
         
         Args:
             simulated_spread: Spread series for the pair
             historical_spread: Optional historical spread data for hybrid z-score calculation
             prices: Price data for the pair (long and short candidates)
-            beta: Hedge ratio for the pair (used for z-score calculation, not for position sizing)
             
         Returns:
             Tuple containing:
@@ -129,7 +127,6 @@ class CaldeiraMouraTradingRule:
             self.historical_spread = historical_spread
             if self.config.verbose:
                 logger.info(f"Stored historical spread data for {pair_name} with {len(historical_spread)} data points")
-                logger.info(f"Using hedge ratio (beta): {beta:.4f} for spread calculation only")
         
         # Calculate z-score using hybrid approach if historical data available
         if self.historical_spread is not None:
