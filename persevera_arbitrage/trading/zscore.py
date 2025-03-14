@@ -270,6 +270,15 @@ class CaldeiraMouraTradingRule:
             # elif self.config.verbose and i % 20 == 0:  # Log every 20 days when no action is taken to reduce verbosity
             elif self.config.verbose:  # Log every 20 days when no action is taken to reduce verbosity
                 logger.info(f"{date}: No trading action for {pair_name}. Z-score: {z:.2f}")
+                
+            # Check if this is the last data point and we have an open position
+            is_last_point = (i == len(zscore) - 1)
+            if is_last_point and self.position != 0:
+                if self.config.verbose:
+                    logger.info(f"{date}: CLOSING position at end of simulation period")
+                signals.iloc[i] = 0
+                sizes.iloc[i] = 0
+                self._close_position(asset1, asset2, current_prices, "End of simulation period", date, z)
         
         return signals, sizes
     
