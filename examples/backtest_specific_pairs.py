@@ -13,8 +13,8 @@ members = get_index_composition(index_code='IBX50', start_date='2024-01-01', end
 price_data = get_descriptors(
     tickers=[*members.columns],
     descriptors='price_close',
-    start_date='2023-01-01',  # Include extra data for training
-    end_date='2024-01-01'
+    start_date='2023-01-01',
+    end_date='2024-01-05'
 )
 price_data.dropna(axis=1, inplace=True)
 
@@ -45,7 +45,7 @@ for i, pair in enumerate(passed_pairs):
         tickers=[pair.asset1, pair.asset2],
         descriptors='price_close',
         start_date='2023-01-01',
-        end_date='2024-01-01'
+        end_date='2024-03-05'
     )
     
     # Create Engle-Granger portfolio to get the hedge ratio
@@ -61,7 +61,6 @@ for i, pair in enumerate(passed_pairs):
         price_data=pair_data,
         hedge_ratio=pair.hedge_ratio,
         training_window=252,  # 1 year of data for training
-        dependent_variable=pair.asset1
     )
     
     # Extract key metrics

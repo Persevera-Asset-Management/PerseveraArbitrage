@@ -7,14 +7,14 @@ from persevera_arbitrage.trading import CaldeiraMouraConfig, Backtester
 from persevera_arbitrage.cointegration_approach import EngleGrangerPortfolio
 
 # 1. Get index composition
-members = get_index_composition(index_code='IBX50', start_date='2024-01-01', end_date='2024-01-01')
+members = get_index_composition(index_code='IBX50', start_date='2024-01-05', end_date='2024-01-05')
 
 # 2. Load price data for all members
 price_data = get_descriptors(
     tickers=[*members.columns],
     descriptors='price_close',
-    start_date='2023-01-01',  # Include extra data for training
-    end_date='2024-01-01'
+    start_date='2023-01-01',
+    end_date='2024-01-05'
 )
 price_data.dropna(axis=1, inplace=True)
 
