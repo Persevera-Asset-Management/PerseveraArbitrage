@@ -28,21 +28,18 @@ class Backtester:
         """
         self.config = config or CaldeiraMouraConfig()
         self.trading_rule = CaldeiraMouraTradingRule(self.config)
-        
+    
     def run_backtest(self, 
                     price_data: pd.DataFrame, 
                     hedge_ratio: float,
-                    training_window: int = 252,
-                    dependent_variable: Optional[str] = None) -> Dict:
+                    training_window: int = 252) -> Dict:
         """
         Run backtest on historical price data.
         
         Args:
-            price_data: DataFrame with price data for the pair
+            price_data: DataFrame with price data for the pair. The first column must be the dependent variable (Y in Y = β*X + ε)
             hedge_ratio: Hedge ratio for the pair
             training_window: Number of days to use for initial training
-            dependent_variable: Which asset is the dependent variable (Y in Y = β*X + ε)
-                                If None, uses the first column
         
         Returns:
             Dictionary with backtest results
@@ -54,13 +51,6 @@ class Backtester:
         if len(price_data) <= training_window:
             raise ValueError(f"Not enough data for training window of {training_window} days")
             
-        # Determine dependent and independent variables
-        if dependent_variable is None:
-            dependent_variable = price_data.columns[0]
-            
-        if dependent_variable not in price_data.columns:
-            raise ValueError(f"Dependent variable {dependent_variable} not found in price data")
-            
         # Split data into training and testing periods
         training_data = price_data.iloc[:training_window]
         testing_data = price_data.iloc[training_window:]
@@ -69,10 +59,10 @@ class Backtester:
             raise ValueError("No data left for testing after training window")
             
         # Calculate historical spread for training period
-        historical_spread = self._calculate_spread(training_data, hedge_ratio, dependent_variable)
+        historical_spread = self._calculate_spread(training_data, hedge_ratio)
         
         # Calculate spread for the entire period (for z-score calculation)
-        full_spread = self._calculate_spread(price_data, hedge_ratio, dependent_variable)
+        full_spread = self._calculate_spread(price_data, hedge_ratio)
         
         # Calculate spread for testing period
         testing_spread = full_spread.loc[testing_data.index]
@@ -108,23 +98,18 @@ class Backtester:
         
         return results
     
-    def gbvgtg_calculate_spread(self, price_data: pd.DataFrame, hedge_ratio: float, dependent_variable: str) -> pd.Series:
+    def _calculate_spread(self, price_data: pd.DataFrame, hedge_ratio: float) -> pd.Series:
         """
         Calculate spread between two assets using the hedge ratio.
         
         Args:
-            price_data: DataFrame with price data
+            price_data: DataFrame with price data. First column is the dependent variable
             hedge_ratio: Hedge ratio for the pair
-            dependent_variable: Which asset is the dependent variable
             
         Returns:
             Series with spread values
         """
-        # Get column indices
-        dependent_idx = price_data.columns.get_loc(dependent_variable)
-        independent_idx = 1 - dependent_idx  # Assuming only 2 columns
-        
-        # Calculate spread: Y - β*X
-        spread = price_data.iloc[:, dependent_idx] - hedge_ratio * price_data.iloc[:, independent_idx]
+        # Calculate spread: Y - β*X where Y is the first column
+        spread = price_data.iloc[:, 0] - hedge_ratio * price_data.iloc[:, 1]
         
         return spread 
