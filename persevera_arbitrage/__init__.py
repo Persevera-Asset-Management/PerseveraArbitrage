@@ -17,4 +17,4 @@ logger.setLevel(logging.INFO)
 if not logger.handlers:
     logger.addHandler(logging.NullHandler())
 
-__version__ = "0.6.2"
+__version__ = "0.6.3"

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from .base import CointegratedPortfolio
 from .config import CointegrationConfig
 from .utils import get_half_life, test_stationarity, calculate_zscore, get_hurst_exponent
-from .validations import validate_price_data, verify_correlations
+from .validations import validate_price_data
 
 @dataclass
 class JohansenTestResult:
@@ -54,10 +54,6 @@ class JohansenPortfolio(CointegratedPortfolio):
             ValueError: If price data contains NaN/infinite values
         """
         validate_price_data(price_data, self.config.min_history)
-        
-        # Verify correlations between pairs
-        if not verify_correlations(price_data):
-            print("Warning: Some pairs show low correlation")
 
         # Set dependent variable if not specified
         dependent_var = self.config.dependent_variable or price_data.columns[0]
