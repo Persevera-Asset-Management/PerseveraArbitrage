@@ -192,8 +192,8 @@ class CaldeiraMouraTradingRule:
                 'holding_days': self.position_days if self.position != 0 else 0
             }
 
-            if self.config.verbose:
-                print(self.equity_curve[date])
+            # if self.config.verbose:
+            #     print(self.equity_curve[date])
             
             # Update peak capital and drawdown
             if current_equity > self.peak_capital:
