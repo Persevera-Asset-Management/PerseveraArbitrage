@@ -8,6 +8,8 @@ from .johansen import JohansenPortfolio
 from .config import CointegrationConfig
 from .utils import get_hurst_exponent
 
+from persevera_tools.data import get_descriptors
+
 @dataclass
 class PairSelectionCriteria:
     """Configuration for pair selection criteria."""
@@ -15,6 +17,7 @@ class PairSelectionCriteria:
     min_half_life: int = 1            # Maximum acceptable half-life in days
     hurst_threshold: float = 0.5      # Maximum Hurst exponent for mean reversion
     significance_level: float = 0.05  # Statistical significance for cointegration tests
+    max_vol_ratio: float = 1.5        # Maximum ratio of volatility of the spread to the volatility of the assets
 
 @dataclass
 class PairTestResult:
@@ -36,6 +39,7 @@ class CointegrationPairSelector:
     1. Both Johansen and Engle-Granger tests must indicate cointegration
     2. Spread must show mean-reverting behavior (Hurst exponent < threshold)
     3. Half-life must be below specified threshold
+    4. Volatility matching
     """
     
     def __init__(self, 
@@ -110,18 +114,23 @@ class CointegrationPairSelector:
         else:
             eg_results = eg_results_2
 
+        # Calculate the volatility of the assets
+        vol_pairs = get_descriptors(tickers=[asset1, asset2], descriptors='volatility_12m', start_date=price_data.index.max(), end_date=price_data.index.max())
+
         # After performing both tests, we use the residuals from the Engle-Granger test as the spread
         spread = eg_results.residuals
         half_life = eg_results.half_life
         hurst_exponent = get_hurst_exponent(spread)
         hedge_ratio = list(eg_results.hedge_ratios.values())[1]
+        vol_ratio = vol_pairs.values.max() / vol_pairs.values.min()
         
         # Check if pair passes all criteria
         passed_all_criteria = (
             is_cointegrated_johansen and
             is_cointegrated_engle_granger and
             self.criteria.min_half_life <= half_life <= self.criteria.max_half_life and
-            hurst_exponent < self.criteria.hurst_threshold
+            hurst_exponent < self.criteria.hurst_threshold and
+            vol_ratio <= self.criteria.max_vol_ratio
         )
         
         return PairTestResult(
@@ -132,7 +141,8 @@ class CointegrationPairSelector:
             half_life=half_life,
             hurst_exponent=hurst_exponent,
             hedge_ratio=hedge_ratio,
-            passed_all_criteria=passed_all_criteria
+            passed_all_criteria=passed_all_criteria,
+            vol_ratio=vol_ratio
         )
     
     def get_best_pairs(self,
@@ -155,3 +165,11 @@ class CointegrationPairSelector:
         passing_pairs.sort(key=lambda x: x.half_life)
         
         return passing_pairs[:n_pairs]
+
+    def get_volatility_metrics(self, price_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Get volatility metrics for all pairs.
+        """
+        results = self.select_pairs(price_data)
+        return pd.DataFrame([r.volatility_metrics for r in results])
+
